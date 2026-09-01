@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "food-web",
+      "runtimeExecutable": "D:\\GAVNO\\.venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "web.server:app", "--port", "8000"],
+      "port": 8000
+    }
+  ]
+}
