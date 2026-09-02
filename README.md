@@ -1,112 +1,110 @@
-# Мок Silpo MCP 🛒
+# Сільпо Pack Agent 🧾
 
-Локальний імітатор MCP «Сільпо» для хакатону **AI Factory**. Реалізує набір
-інструментів, приблизно відповідний реальному Silpo MCP (пошук товарів,
-batch-пошук, кошик, доставка, історія покупок, дієта, родина, купони,
-персональні акції, «Власний Рахунок»), але **на фейкових даних** — щоб
-розробляти й демонструвати ідею агента без доступу до справжнього MCP організаторів.
+Агент, який збирає **паки** — іменовані набори справжніх товарів «Сільпо» — з
+твоїх реальних чеків, купонів і акцій, а тоді кладе їх у **справжній кошик**
+твого акаунта. Проєкт для хакатону **«Сільпо» AI Factory**.
 
-> Ідея продукту: **AI Food & Lifestyle Assistant** — агент, який за фото їжі,
-> настроєм, look-ом, подією, бюджетом та історією покупок збирає
-> персональний гейміфікований кошик у «Сільпо». Цей мок = «Сільпо»-частина;
-> свою логіку (Vision, настрій, квести) додаєш зверху як окремий шар/агент.
+Все, що бачиш нижче, працює на офіційному MCP `https://mcp.silpo.ua/mcp`.
+Моків у репозиторії немає.
 
-## Інструменти (MCP tools)
+## Що агент реально робить
 
-| Інструмент | Що робить |
+| Дія | Реальні tools «Сільпо» під капотом |
 |---|---|
-| `search_products` | Пошук товарів (фільтри: категорія, ціна, тег, наявність) |
-| `batch_search_products` | Кілька запитів за раз (усі інгредієнти страви) |
-| `get_product` | Деталі товару за id |
-| `find_recipe` | Страва → перелік потрібних товарів + орієнтовна сума |
-| `get_cart` / `add_to_cart` / `add_many_to_cart` / `remove_from_cart` / `clear_cart` | Робота з кошиком |
-| `get_purchase_history` | Історія покупок (online / offline) |
-| `get_frequently_bought` | Топ товарів за частотою (проактивні підказки) |
-| `get_dietary_restrictions` | Алергії, дієти, нелюбимі продукти |
-| `get_family` | Склад родини та їхні дієти |
-| `get_coupons` | Доступні купони |
-| `get_personal_promotions` | Персональні ціни |
-| `get_own_account` | «Власний Рахунок»: баланс, рівень, бали |
-| `get_delivery_slots` | Слоти доставки |
-| `prepare_checkout` | Готує замовлення **для підтвердження людиною** (не купує сам) |
+| Розпізнає гостя за чеками, а не за анкетою | `get_my_profile`, `get_my_family`, `get_my_food_restrictions`, `get_my_offline_orders`, `get_loyalty_info` |
+| Збирає пак під подію | `find_products_batch` |
+| Відтворює пак із чека, підмінюючи те, чого немає | `get_my_offline_orders`, `get_similar_products` |
+| Поповнює звичне за циклом покупок | `get_my_offline_orders` + власний розрахунок циклу |
+| Бере готовий набір «Сільпо» й лишає тільки акційне | `get_product_sets`, `get_products` |
+| Показує, які купони й промо спрацюють саме на цей пак | `get_my_coupons`, `get_my_promos`, `get_loyalty_info` |
+| Знаходить, де вигідно взяти дві штуки замість однієї | `specialPrices` у результатах пошуку |
+| Міняє позицію на дешевшу або акційну | `get_similar_products` |
+| Зберігає пак і дублює його в «Обране» акаунта | `add_or_update_favorite_products` |
+| **Кладе пак у справжній кошик** і доводить до оплати | `get_my_shopping_cart`, `create_shopping_cart`, `add_or_update_cart_products`, `get_shopping_cart_by_id` |
 
-> ⚠️ `prepare_checkout` навмисно **не завершує покупку** — повертає статус
-> `PENDING_HUMAN_CONFIRMATION` та посилання. Це відповідає правилам хакатону:
-> checkout підтверджує людина, а не агент.
+Оформлення замовлення агент **не виконує** — доводить до кнопки «Оформити»
+й зупиняється. Підтверджує людина.
 
-## Встановлення
+## Архітектура
 
-Потрібен **Python 3.10+**. Перевір: `python --version`
-(якщо не встановлено — постав із <https://python.org> або через `winget install Python.Python.3.12`).
+```
+Qwen (Ollama)
+   ↓ MCP
+web/  ← Starlette як MCP-хост, власної бізнес-логіки не має
+   ↓ MCP (stdio)
+silpo_agent_mcp/  ← 19 tools рівня сценарію
+profile_mcp/      ← те, чого немає в акаунті «Сільпо»: алергії, факти, нагороди
+   ↓ MCP (streamable HTTP + OAuth)
+mcp.silpo.ua  ← офіційні 40 tools
+```
+
+Навіщо шар `silpo_agent_mcp`: сирі 40 tools вимагають `branchId`, `companyId`,
+`timeslot` і довгих ланцюжків викликів — 3B-модель на цьому ламається. Тут вона
+дістає 19 інструментів з одним-двома зрозумілими аргументами, а всі справжні
+`silpo_*` виклики видно у трейсі (панель «MCP-стрічка» в UI, tool `mcp_trace`).
+
+## Документація
+
+| Документ | Про що |
+|---|---|
+| [`docs/LOCAL_LLM.md`](docs/LOCAL_LLM.md) | Як підняти проєкт і локальну модель на **Windows**, покроково |
+| [`docs/scenarios.html`](docs/scenarios.html) | Усі end-to-end сценарії: що працює, що додаємо, яких tools бракує |
+| [`docs/research/`](docs/research/) | Схеми 40 tools MCP і розбір застосунку «Сільпо» — 228 ендпоінтів |
+
+## Запуск
+
+Потрібен **Python 3.10+**.
 
 ```bash
-python -m venv .venv
-# Windows PowerShell:
-.venv\Scripts\Activate.ps1
-# або bash:
-source .venv/Scripts/activate
-
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+python -m silpo_agent_mcp.login          # OAuth у браузері, один раз
+python -m uvicorn web.server:app --port 8000
 ```
 
-## Перевірка логіки (без MCP-клієнта)
+Токени лягають у `.mcp/silpo_tokens.json` і далі оновлюються самі через
+`refresh_token`. Claude Desktop і `mcp-remote` **не потрібні**.
+
+Чат вимагає локальної моделі:
 
 ```bash
-python demo.py
+ollama pull qwen2.5:3b     # 7b помітно надійніша в tool-calling
 ```
 
-Пройде сценарій «італійський вечір»: пошук → рецепт → кошик → купон → checkout.
+Без Ollama працює все, крім вільного тексту: паки з чека, поповнення звичного,
+набори «Сільпо», оптимізація та кошик — це кнопки, не модель.
 
-## Запуск як MCP-сервер
+## Корисні команди
 
 ```bash
-python -m silpo_mcp.server
+python -m silpo_agent_mcp.probe probe_out   # схеми 40 tools + зразки (тільки читання)
+python -m silpo_agent_mcp.server            # фасад як окремий stdio MCP-сервер
 ```
 
-Сервер працює через **stdio** — його підхоплює будь-який MCP-клієнт.
+`probe` нічого не змінює: жоден write-tool не викликається.
 
-### Інспектор (візуальна перевірка інструментів)
+## Що MCP «Сільпо» не віддає
 
-```bash
-mcp dev silpo_mcp/server.py
-```
-
-### Підключення до Claude Desktop / Cursor / іншого клієнта
-
-Додай у конфіг MCP-клієнта (напр. `claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "silpo-mock": {
-      "command": "python",
-      "args": ["-m", "silpo_mcp.server"],
-      "cwd": "D:/GAVNO"
-    }
-  }
-}
-```
-
-> Якщо використовуєш venv — вкажи повний шлях до `python` з `.venv`, напр.
-> `"command": "D:/GAVNO/.venv/Scripts/python.exe"`.
+- **Склад товару.** `get_product_details.attributes` містить країну, ТМ,
+  продавця та БЖУ — інгредієнтів немає. Тому алергени ми ловимо за назвою
+  («Вафлі Milka Nussini **з фундуком**»), і це чесно позначено в коді.
+- **Активацію персональних промо.** `get_my_promos` лише читає, тож агент
+  радить, які 1–5 із 10 обрати, а активує людина в застосунку.
+- **Оформлення замовлення.** Такого tool немає — і це правильно.
 
 ## Структура
 
 ```
-silpo_mcp/
-  __init__.py
-  server.py      # FastMCP-сервер + усі інструменти
-  data.py        # фейковий каталог, історія, купони, профіль
-demo.py          # димовий тест сценарію
-requirements.txt
-pyproject.toml   # встановлення пакета + команда silpo-mcp
+silpo_agent_mcp/
+  auth.py     OAuth 2.1 + PKCE, локальний callback, сховище токенів
+  login.py    одноразовий вхід
+  silpo.py    клієнт mcp.silpo.ua: сеанс у виділеній задачі + трейс
+  context.py  контекст кошика — ключ до 22 з 40 tools
+  facade.py   операції рівня продукту
+  packs.py    сховище паків
+  server.py   MCP-сервер: те, що бачить модель
+  probe.py    розвідка схем і форматів
+profile_mcp/  профіль, памʼять фактів, тригери, нагороди
+web/          MCP-хост (Starlette), tool-loop на Qwen, UI
 ```
-
-## Що додати зверху (свій шар агента)
-
-Мок покриває «Сільпо»-частину. Для повної ідеї додай окремо:
-
-- **Vision** — розпізнавання страви/look-у з фото → перелік запитів для `batch_search_products`;
-- **Mood / текст** — з контексту розмови формуй теги (`tag=` у `search_products`);
-- **Гейміфікація** — квести/челенджі поверх `find_recipe` + `get_coupons`;
-- **Food persona** — комбінуй `get_purchase_history` + `get_frequently_bought`.

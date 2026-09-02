@@ -6,3 +6,4 @@ dist/
 build/
 .mcp/
 profile_data.json
+probe_out/

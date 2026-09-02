@@ -62,6 +62,8 @@ _DEFAULT_PROFILE = {
     "hobbies": [],        # напр. "спорт", "кіно", "малювання"
     "interests": [],      # улюблені фільми/ігри/музика — джерело проактивних тригерів
     "budget_pref": None,  # "low" / "medium" / "high" або число (грн на кошик)
+    "bonus_first": False, # тумблер: спершу пропонувати те, на що діє знижка чи бонуси
+    "equipment": [],      # техніка на кухні: сковорідка, духовка, аерогриль…
 }
 
 
@@ -195,6 +197,8 @@ def update_profile(
     hobbies: Optional[list[str]] = None,
     interests: Optional[list[str]] = None,
     budget_pref: Optional[str] = None,
+    bonus_first: Optional[bool] = None,
+    equipment: Optional[list[str]] = None,
     mode: str = "merge",
 ) -> dict:
     """Оновлює профіль користувача. Передавай лише ті поля, які треба змінити.
@@ -210,6 +214,7 @@ def update_profile(
         "name": name, "likes": likes, "dislikes": dislikes, "allergies": allergies,
         "diets": diets, "relationship": relationship, "family": family,
         "hobbies": hobbies, "interests": interests, "budget_pref": budget_pref,
+        "bonus_first": bonus_first, "equipment": equipment,
     }
     for key, val in incoming.items():
         if val is None:

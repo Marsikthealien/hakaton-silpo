@@ -1,11 +1,11 @@
 """Чат-агент на локальному Qwen через Ollama, керований по MCP.
 
-Інструменти БЕРУТЬСЯ ДИНАМІЧНО з MCP-серверів (profile + silpo-mock) через
-MCPHost, і виклики моделі маршрутизуються назад у ці сервери по MCP-протоколу.
-Тобто це справжній «Qwen + MCP».
+Інструменти беруться ДИНАМІЧНО з MCP-серверів (silpo-agent + profile) через
+MCPHost, а виклики моделі маршрутизуються назад у ці сервери по протоколу.
 
-Для стабільності маленької моделі показуємо їй КУРОВАНИЙ набір інструментів
-(високорівневі build_cart/add_product + ключові), а не всі ~30.
+Моделі показуємо курований набір: 3B-параметрична модель захлинається на 40
+сирих tools «Сільпо» з uuid-аргументами, тому вона працює з фасадом, де в
+кожного інструмента один-два зрозумілі аргументи.
 """
 
 from __future__ import annotations
@@ -16,42 +16,76 @@ import re
 
 import httpx2
 
-from web import silpo_live
-
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 MODEL = os.environ.get("OLLAMA_MODEL", "")  # порожньо = авто-вибір
 
-_PREFERRED = ["qwen2.5:3b", "qwen2.5:7b", "qwen2.5:3b-instruct",
+_PREFERRED = ["qwen2.5:7b", "qwen2.5:3b", "qwen2.5:3b-instruct",
               "llama3.2:3b", "qwen2.5", "qwen3:4b", "qwen3:1.7b", "qwen3"]
 
-# Інструменти MCP, які показуємо моделі (щоб не перевантажувати 3B усіма 30).
 ALLOWED = {
-    "build_cart", "add_product", "get_cart", "prepare_checkout",
-    "find_recipe", "get_coupons",
-    "get_profile", "update_profile", "remember_fact", "check_triggers", "get_rewards",
+    "who_am_i", "build_pack", "pack_from_receipt", "reorder_pack",
+    "mood_pack", "evening_pack", "breakfast_pack",
+    "optimize_pack", "swap_item", "pack_to_cart", "save_pack",
+    "my_packs", "my_perks",
+    "get_profile", "update_profile", "remember_fact",
 }
 
 SYSTEM = (
-    "Ти — AI Food Assistant «Сільпо». Твоя мета — ДІЯТИ інструментами, а не розмовляти. "
-    "Відповідай коротко, українською.\n"
-    "• Зібрати НОВИЙ набір під подію/бюджет ('вечір кіно до 300 грн', 'італійський "
-    "вечір') — build_cart (theme + max_uah). Він ЗАМІНЮЄ вміст кошика.\n"
-    "• Додати ОДИН конкретний товар ('додай каву', 'ще молоко') — add_product (name). "
-    "Він НЕ очищає кошик.\n"
-    "• Проактивні ідеї 'що сьогодні' — check_triggers. Профіль — get_profile.\n"
-    "• Важливі факти (улюблений фільм тощо) — remember_fact.\n"
-    "Після дії коротко підсумуй результат (що зібрав і на яку суму). "
-    "prepare_checkout лише готує замовлення — покупку підтверджує людина."
+    "Ти — агент паків «Сільпо». Ти не радиш, а РОБИШ: збираєш набори з реальних "
+    "товарів і кладеш їх у справжній кошик. Відповідай коротко, українською.\n"
+    "• Хто перед тобою, що людина купує і що вже мало б закінчитись — who_am_i.\n"
+    "• Новий набір під подію ('вечір кіно до 400 грн') — build_pack: name, "
+    "items (перелік того, що шукати — вигадай його сам), max_uah.\n"
+    "• 'Як минулого разу', 'повтори покупку' — pack_from_receipt.\n"
+    "• Настрій ('мені грайливо', 'втомився') — mood_pack.\n"
+    "• Вечір удома ('футбол', 'фільм', 'романтична вечеря') — evening_pack.\n"
+    "• 'Сніданок на 200 грн' — breakfast_pack (поверне ще й рецепт).\n"
+    "• 'Не їм гриби', 'алергія на горіхи', 'люблю пасту' — update_profile.\n"
+    "• 'Що зазвичай беру', 'закінчилось' — reorder_pack.\n"
+    "• Перед покупкою — optimize_pack: покаже, які купони й промо спрацюють і "
+    "де вигідно взяти дві штуки замість однієї.\n"
+    "• 'Заміни/дешевше/інше' — swap_item. 'Збережи' — save_pack.\n"
+    "• 'Поклади в кошик', 'беру' — pack_to_cart.\n"
+    "• Важливі факти про людину (алергія, улюблений фільм) — remember_fact.\n"
+    "Після дії коротко скажи, що зібрав, на яку суму і скільки зекономлено. "
+    "Замовлення оформлює людина, не ти."
 )
+
+
+async def _fallback(messages: list[dict], host) -> dict:
+    """Без моделі: розбираємо намір правилами й виконуємо сценарій самі."""
+    text = next((m.get("content", "") for m in reversed(messages)
+                 if m.get("role") == "user"), "")
+    intent = route_intent(text)
+    if not intent:
+        return {"reply": "Не зрозумів. Спробуй сценарій кнопкою — вони працюють без моделі.",
+                "tools_used": [], "routed": True}
+    profile = (await host.call("get_profile", {})).get("profile", {})
+    args = dict(intent["args"])
+    if intent["tool"] in ("build_pack", "meal_pack", "mood_pack", "evening_pack",
+                          "pack_from_receipt", "reorder_pack"):
+        avoid = (profile.get("allergies") or []) + (profile.get("dislikes") or [])
+        if avoid:
+            args.setdefault("avoid", avoid)
+        if profile.get("bonus_first"):
+            args.setdefault("prefer_promo", True)
+    result = await host.call(intent["tool"], args)
+    name = result.get("name") or intent["tool"]
+    summary = (f"{name}: {result['item_count']} позицій на {result['total_uah']} ₴"
+               if result.get("item_count") is not None
+               else "Готово — дивись картку праворуч.")
+    return {"reply": f"Модель офлайн, {intent['why']}.\n{summary}",
+            "tools_used": [{"name": intent["tool"], "args": args}],
+            "routed": True, "result": result}
 
 
 def _pick_model(models: list[str]) -> str:
     if MODEL:
         return MODEL
-    for pref in _PREFERRED:
-        for m in models:
-            if m == pref or m.split(":")[0] == pref.split(":")[0]:
-                return m
+    for preferred in _PREFERRED:
+        for name in models:
+            if name == preferred or name.split(":")[0] == preferred.split(":")[0]:
+                return name
     return models[0] if models else "qwen2.5:3b"
 
 
@@ -62,9 +96,9 @@ def _strip_think(text: str) -> str:
 
 async def chat_available() -> dict:
     try:
-        async with httpx2.AsyncClient(timeout=3) as c:
-            r = await c.get(f"{OLLAMA_URL}/api/tags")
-            models = [m.get("name", "") for m in r.json().get("models", [])]
+        async with httpx2.AsyncClient(timeout=3) as client:
+            response = await client.get(f"{OLLAMA_URL}/api/tags")
+            models = [m.get("name", "") for m in response.json().get("models", [])]
         return {"available": True, "model": _pick_model(models),
                 "has_model": bool(models), "models": models}
     except Exception:
@@ -72,62 +106,117 @@ async def chat_available() -> dict:
                 "hint": "Запусти Ollama та `ollama pull qwen2.5:3b`."}
 
 
-async def _run_tool(fn: str, args: dict, host, source: str):
-    """Виконати інструмент: у live-режимі build_cart/add_product ідуть у РЕАЛЬНИЙ
-    Silpo MCP (через silpo_live), решта — у mock/profile через MCP-хост."""
-    if source == "live" and fn == "build_cart":
-        return await silpo_live.live_build_cart(
-            args.get("theme", ""), args.get("max_uah"), args.get("avoid"))
-    if source == "live" and fn == "add_product":
-        return await silpo_live.live_add_product(args.get("name", ""))
-    return await host.call(fn, args)
-
-
-async def chat(messages: list[dict], host, source: str = "mock", max_steps: int = 6) -> dict:
-    """Tool-loop через Ollama; інструменти по MCP через host.
-
-    source='live' → build_cart/add_product виконуються реальним Silpo MCP.
-    """
+async def chat(messages: list[dict], host, max_steps: int = 6) -> dict:
+    """Tool-loop через Ollama; інструменти виконуються по MCP через host."""
     status = await chat_available()
     if not status["available"]:
-        return {"reply": None, "error":
-                "Локальна модель недоступна. Встанови Ollama (https://ollama.com), "
-                "виконай `ollama pull qwen2.5:3b` — і чат запрацює.", "tools_used": []}
+        return await _fallback(messages, host)
 
     model = status["model"]
     tools = [t for t in host.tools if t["function"]["name"] in ALLOWED]
-
     convo = [{"role": "system", "content": SYSTEM}] + messages
     if model.startswith("qwen3") and convo and convo[-1]["role"] == "user":
         convo[-1] = {**convo[-1], "content": convo[-1]["content"] + " /no_think"}
 
     tools_used = []
-    async with httpx2.AsyncClient(timeout=180) as c:
+    async with httpx2.AsyncClient(timeout=300) as client:
         for _ in range(max_steps):
-            resp = await c.post(f"{OLLAMA_URL}/api/chat", json={
+            response = await client.post(f"{OLLAMA_URL}/api/chat", json={
                 "model": model, "messages": convo, "tools": tools,
                 "stream": False, "think": False, "keep_alive": "15m",
                 "options": {"temperature": 0.2, "num_predict": 512}})
-            if resp.status_code != 200:
-                return {"reply": None, "error": f"Ollama {resp.status_code}: {resp.text[:200]}",
-                        "tools_used": tools_used}
-            msg = resp.json().get("message", {})
-            calls = msg.get("tool_calls") or []
+            if response.status_code != 200:
+                return {"reply": None, "tools_used": tools_used,
+                        "error": f"Ollama {response.status_code}: {response.text[:200]}"}
+            message = response.json().get("message", {})
+            calls = message.get("tool_calls") or []
             if not calls:
-                return {"reply": _strip_think(msg.get("content")), "tools_used": tools_used}
-            convo.append({"role": "assistant", "content": msg.get("content", ""),
+                return {"reply": _strip_think(message.get("content")),
+                        "tools_used": tools_used}
+            convo.append({"role": "assistant", "content": message.get("content", ""),
                           "tool_calls": calls})
-            for tc in calls:
-                fn = tc["function"]["name"]
-                raw = tc["function"].get("arguments")
+            for call in calls:
+                name = call["function"]["name"]
+                raw = call["function"].get("arguments")
                 args = raw if isinstance(raw, dict) else json.loads(raw or "{}")
-                # для build_cart автоматично підставляємо алергії/несмаки з профілю
-                if fn == "build_cart" and "avoid" not in args:
-                    prof = (await host.call("get_profile", {})).get("profile", {})
-                    args["avoid"] = (prof.get("allergies", []) or []) + (prof.get("dislikes", []) or [])
-                result = await _run_tool(fn, args, host, source)
-                tools_used.append({"name": fn, "args": args,
-                                   "source": source if fn in ("build_cart", "add_product") else "mcp"})
-                convo.append({"role": "tool", "tool_name": fn,
-                              "content": json.dumps(result, ensure_ascii=False)})
+                # алергії та несмаки модель забувати не має права — підставляємо самі
+                if name in ("build_pack", "pack_from_set") and "avoid" not in args:
+                    profile = (await host.call("get_profile", {})).get("profile", {})
+                    avoid = (profile.get("allergies") or []) + (profile.get("dislikes") or [])
+                    if avoid:
+                        args["avoid"] = avoid
+                result = await host.call(name, args)
+                tools_used.append({"name": name, "args": args})
+                convo.append({"role": "tool", "tool_name": name,
+                              "content": json.dumps(result, ensure_ascii=False)[:4000]})
     return {"reply": "(перевищено ліміт кроків)", "tools_used": tools_used}
+
+
+# ---------------------------------------------------------------------------
+# Розбір наміру без моделі
+# ---------------------------------------------------------------------------
+# Коли Ollama не піднята, вимикати поле вводу — погане рішення: гість пише,
+# а йому мовчать. Тут простий роутер за ключовими словами доводить фразу до
+# того самого сценарію. Він гірший за модель, але чесніший за німоту.
+_INTENTS = [
+    (("повтори", "минул", "як тоді", "як завжди", "той самий чек"),
+     "pack_from_receipt", {"index": 0}, "впізнав «повтори чек»"),
+    (("закінч", "поповни", "звичн", "що я зазвичай", "докупи"),
+     "reorder_pack", {}, "впізнав «поповнити звичне»"),
+    (("холодильник", "вдома нема", "що є вдома", "полиц"),
+     "silpo_pantry_missing", {}, "впізнав «перевір холодильник»"),
+    (("сімʼ", "сім'", "родин", "на всіх", "на всю"),
+     "silpo_get_family_preferences", {}, "впізнав «на всю родину»"),
+    (("тренуванн", "зал", "спав", "втомивс", "самопочутт"),
+     "silpo_wellbeing_state", {}, "впізнав «за самопочуттям»"),
+    (("влізе", "вага", "важк", "кілограм", "не влізе"),
+     "cart_weight_check", {}, "впізнав «чи влізе кошик»"),
+    (("доставк", "топати", "дійти", "найближч", "магазин поруч"),
+     "silpo_estimate_delivery", {"latitude": 50.5187, "longitude": 30.4986,
+                                 "cart_total_uah": 700}, "впізнав «топати чи замовити»"),
+    (("маршрут", "по залу", "де шукати", "обхід"),
+     "silpo_get_store_layout", {}, "впізнав «маршрут по залу»"),
+    (("футбол", "фільм", "серіал", "телевізор", "залипнут"),
+     "evening_pack", {"genre": "фільм", "max_uah": 700}, "впізнав «вечір удома»"),
+    (("сніданок", "обід", "вечер", "десерт", "приготув", "рецепт"),
+     "meal_pack", {}, "впізнав «страва на суму»"),
+    (("настрій", "фрукт", "сумно", "весело"),
+     "mood_pack", {"mood": "ігривий", "max_uah": 600}, "впізнав «настрій»"),
+]
+
+_MEALS = ("сніданок", "обід", "вечеря", "десерт")
+
+
+def route_intent(text: str) -> dict:
+    """Фраза → сценарій. Повертає {tool, args, why} або None, якщо не впізнав."""
+    low = (text or "").lower()
+    amount = None
+    for token in re.findall(r"\d+", low):
+        if 30 <= int(token) <= 100000:
+            amount = float(token)
+            break
+
+    for keys, tool, args, why in _INTENTS:
+        if not any(k in low for k in keys):
+            continue
+        args = dict(args)
+        if tool == "meal_pack":
+            for meal in _MEALS:
+                if meal[:5] in low:
+                    args["meal"] = meal
+                    break
+            if amount:
+                args["max_uah"] = amount
+        elif amount and "max_uah" in args:
+            args["max_uah"] = amount
+        return {"tool": tool, "args": args, "why": why}
+
+    # нічого не впізнали — збираємо пак із самих слів
+    words = [w for w in re.findall(r"[А-ЯІЇЄҐа-яіїєґa-z]{4,}", low)
+             if w not in ("хочу", "треба", "купити", "знайди", "будь", "ласка", "мені")]
+    if words:
+        return {"tool": "build_pack",
+                "args": {"name": text[:40], "items": words[:6],
+                         **({"max_uah": amount} if amount else {})},
+                "why": "не впізнав сценарій — шукаю за словами з фрази"}
+    return None

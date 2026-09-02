@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Під капотом · Сільпо Pack Agent</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="page"><div class="cols two">
+
+  <div class="col">
+    <section class="card">
+      <h2>Доступ до «Сільпо»</h2>
+      <div id="token" class="muted">—</div>
+      <div class="tokenrow">
+        <input id="tok" placeholder="вставити свіжий access_token">
+        <button class="go" onclick="saveToken()">Зберегти</button>
+        <button class="go ghost" onclick="forgetToken()">Забути</button>
+      </div>
+      <p class="soft" style="margin:10px 0 0">Або пройти OAuth заново — токен збережеться сам,
+        і далі оновлюватиметься через refresh_token:</p>
+      <code class="cmd" id="cmd"></code>
+    </section>
+
+    <section class="card">
+      <h2>Ланцюг агента</h2>
+      <div id="chain"></div>
+      <p class="soft" style="margin:10px 0 0">Протокол на всю глибину: модель не знає про HTTP
+        «Сільпо» — вона знає лише MCP.</p>
+    </section>
+
+    <section class="card">
+      <div class="head"><div class="t"><h2>Запропоновані tools</h2>
+        <div class="soft">Реалізовані в нас, щоб сценарії працювали. У трейсі — фіолетові</div></div></div>
+      <div id="proposed" class="muted">—</div>
+    </section>
+
+    <section class="card limits">
+      <h2>Чого MCP «Сільпо» не дозволяє</h2>
+      <p><b>Склад товару.</b> <span class="mono">get_product_details.attributes</span> — країна, ТМ,
+        продавець, БЖУ. Інгредієнтів немає, тож алергени ловимо за назвою.</p>
+      <p><b>Активацію промо.</b> <span class="mono">get_my_promos</span> лише читає.</p>
+      <p><b>Спосіб оплати.</b> В <span class="mono">update_shopping_cart</span> немає
+        <span class="mono">paymentType</span> — Дольки обирає людина.</p>
+      <p><b>Вподобання родини.</b> <span class="mono">get_my_family</span> дає склад, але не смаки.</p>
+      <p><b>Сертифікати.</b> <span class="mono">get_my_certificates</span> відповідає
+        <span class="mono">500 Internal Server Error</span> — схоже на баг на боці «Сільпо».
+        <button class="link" onclick="checkCerts()">перевірити зараз</button>
+        <span id="certs"></span></p>
+    </section>
+
+    <section class="card">
+      <h2>Мої паки</h2>
+      <div id="packs" class="muted">—</div>
+    </section>
+  </div>
+
+  <div class="col">
+    <section class="card">
+      <div class="head"><div class="t"><h2>Виклики MCP</h2>
+        <div class="muted" id="trace-sum">—</div></div>
+        <button class="go ghost" onclick="loadTrace(60)">Оновити</button></div>
+      <div id="trace" class="mono"></div>
+    </section>
+  </div>
+
+</div></div>
+
+<script src="/app.js"></script>
+<script>
+async function loadToken(){
+  const t = await api('/api/auth');
+  $('#cmd').textContent = t.login_command;
+  $('#token').innerHTML = t.present ? `
+    <div class="attr"><span>Токен</span><span>…${t.tail}</span></div>
+    <div class="attr"><span>Збережено</span><span>${t.saved_at} (${t.age_hours} год тому)</span></div>
+    <div class="attr"><span>refresh_token</span><span>${t.has_refresh ? 'є' : 'немає'}</span></div>
+    <div class="attr"><span>OAuth-клієнт</span><span>${t.client_registered ? 'зареєстровано' : '—'}</span></div>
+    <div class="attr"><span>Файл</span><span class="mono" style="font-size:11px">${t.path}</span></div>`
+    : `<p style="color:var(--red);margin:0">Токена немає. ${t.hint || ''}</p>`;
+}
+async function saveToken(){
+  const v = $('#tok').value.trim(); if(!v) return toast('Порожньо');
+  const r = await api('/api/auth/token','POST',{access_token:v});
+  if(bad(r)) return;
+  $('#tok').value=''; toast('Токен оновлено'); loadToken(); loadChain();
+}
+async function forgetToken(){
+  await api('/api/auth/forget','POST',{}); toast('Забув'); loadToken();
+}
+async function checkCerts(){
+  $('#certs').textContent = ' перевіряю…';
+  const r = await api('/api/perks');
+  $('#certs').innerHTML = r.error
+    ? ` <b style="color:var(--red)">досі падає</b>`
+    : ` <b style="color:var(--green)">перевір у трейсі</b>`;
+}
+async function loadChain(){
+  const s = await api('/api/status');
+  $('#chain').innerHTML = [
+    [`Qwen (${s.model_available ? s.model : 'офлайн'})`, 'локальна модель', ''],
+    ['MCP · stdio', `${s.mcp_tools} tools із ${(s.servers||[]).join(' + ')}`, ''],
+    ['silpo-agent', 'фасад рівня сценарію + запропоновані tools', ''],
+    ['MCP · streamable HTTP + OAuth', 'mcp.silpo.ua', 'deep'],
+    ['«Сільпо»', `40 tools · ${s.silpo_calls} викликів за сеанс`, 'deep'],
+  ].map(([a,b,c]) => `<div class="step ${c}"><i></i><b>${a}</b><span>${b}</span></div>`).join('');
+}
+function loadProposed(){
+  const list = [
+    ['silpo_find_recipes','страва → складники, кроки, час і потрібна техніка'],
+    ['silpo_get_product_composition','інгредієнти й декларовані алергени — найважливіший'],
+    ['silpo_also_bought','що беруть у одному чеку з цим товаром'],
+    ['silpo_estimate_delivery','порівняння способів отримання за координатами'],
+    ['silpo_get_family_preferences','смаки й алергії кожного члена родини'],
+    ['silpo_set_member_preferences','запис вподобань учасника родини чи компанії'],
+    ['silpo_record_swipe / get_swipes','памʼять про відмову, а не лише про «Обране»'],
+    ['silpo_select_promos','активувати обрані 1–5 персональних промо'],
+    ['silpo_pantry_sync / pantry_missing','інвентар кухні та чого бракує'],
+    ['silpo_wellbeing_sync','сигнали з фітнес-трекера чи трекера настрою'],
+  ];
+  $('#proposed').innerHTML = list.map(([n,d]) =>
+    `<div class="call"><span class="n mono" style="color:#6B34C9">${n}</span>
+      <span class="ms" style="flex:2;text-align:left;color:var(--muted)">${d}</span></div>`).join('');
+}
+async function loadPacks(){
+  const d = await api('/api/packs');
+  $('#packs').innerHTML = (d.packs||[]).slice(0,12).map(p =>
+    `<div class="call"><span class="n">${p.name}</span>
+      <span class="ms">${p.items} поз. · ${uah(p.total_uah)} ₴</span></div>`).join('')
+    || '<span class="muted">Ще жодного.</span>';
+}
+mountTop('tech');
+(async () => {
+  loadProposed();
+  await Promise.all([loadStatus(), loadToken(), loadChain(), loadTrace(60), loadPacks()]);
+  setInterval(() => loadTrace(60), 2500);
+})();
+</script>
+</body>
+</html>

@@ -3,557 +3,154 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Сільпо Food Assistant</title>
-<style>
-  :root{
-    --bg:#f4eefb; --panel:#ffffff; --panel2:#f6f1fd; --line:#e7ddf3;
-    --text:#251a3a; --muted:#8a7ca6; --accent:#7b2ff7; --accent2:#e4002b;
-    --good:#12b76a; --radius:16px;
-    --shadow:0 4px 18px rgba(90,40,140,.08);
-  }
-  *{box-sizing:border-box}
-  body{margin:0;font-family:'Segoe UI',system-ui,Roboto,sans-serif;background:var(--bg);color:var(--text)}
-  header{display:flex;align-items:center;gap:12px;padding:16px 22px;border-bottom:1px solid var(--line);
-    background:linear-gradient(90deg,#7b2ff7,#a855f7 55%,#e4002b);color:#fff}
-  header .logo{width:38px;height:38px;border-radius:50% 50% 50% 50%/55% 55% 45% 45%;background:
-    linear-gradient(160deg,#e4002b 0%,#b026a8 45%,#7b2ff7 100%);flex:0 0 auto;position:relative;
-    box-shadow:0 2px 8px rgba(0,0,0,.2)}
-  header .logo::after{content:"";position:absolute;top:-4px;left:52%;width:9px;height:12px;
-    background:#12b76a;border-radius:0 60% 0 60%;transform:rotate(20deg)}
-  header h1{font-size:18px;margin:0;color:#fff}
-  header .sub{color:rgba(255,255,255,.85);font-size:12px}
-  .wrap{display:grid;grid-template-columns:320px 1fr 320px;gap:16px;padding:16px;max-width:1400px;margin:0 auto}
-  @media(max-width:1050px){.wrap{grid-template-columns:1fr}}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin-bottom:16px;box-shadow:var(--shadow)}
-  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 10px}
-  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 3px}
-  input,select,textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:9px;
-    color:var(--text);padding:8px 10px;font-size:13px;font-family:inherit}
-  button{cursor:pointer;border:none;border-radius:9px;padding:9px 12px;font-size:13px;font-weight:600;
-    background:var(--accent);color:#fff;transition:.15s}
-  button:hover{filter:brightness(1.1)}
-  button.ghost{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
-  button.orange{background:var(--accent2)}
-  button.sm{padding:5px 9px;font-size:12px}
-  .row{display:flex;gap:8px;flex-wrap:wrap}
-  .row>*{flex:1}
-  .prod{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--panel2);
-    border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:8px}
-  .prod .name{font-size:13px;font-weight:600}
-  .prod .meta{font-size:11px;color:var(--muted)}
-  .price{font-weight:700}
-  .old{color:var(--muted);text-decoration:line-through;font-size:11px;margin-right:5px}
-  .badge{display:inline-block;background:rgba(228,0,43,.12);color:#e4002b;border-radius:6px;padding:1px 6px;font-size:10px;font-weight:700}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  @media(max-width:640px){.grid{grid-template-columns:1fr}}
-  .trigger{background:linear-gradient(120deg,rgba(123,47,247,.09),rgba(228,0,43,.06));
-    border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:8px}
-  .trigger .msg{font-size:13px;margin-bottom:8px}
-  .muted{color:var(--muted);font-size:12px}
-  .total{display:flex;justify-content:space-between;font-size:15px;font-weight:700;margin-top:8px;
-    padding-top:8px;border-top:1px solid var(--line)}
-  .chip{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:20px;
-    padding:3px 10px;font-size:12px;margin:2px}
-  .reward{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);border-radius:10px;
-    padding:8px 11px;margin-bottom:6px;font-size:12px}
-  .reward code{background:#0f1116;padding:1px 6px;border-radius:5px;color:var(--good)}
-  dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:16px;
-    padding:18px;max-width:460px;width:92%}
-  dialog::backdrop{background:rgba(0,0,0,.6)}
-  canvas{background:#fff;border-radius:12px;touch-action:none;display:block;margin:10px auto;cursor:crosshair}
-  .avatar{width:30px;height:30px;border-radius:50%;background:radial-gradient(circle at 30% 30%,#f97316,#8b5cf6);
-    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#fff;flex:0 0 auto}
-  .prof-btn{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);
-    border-radius:24px;padding:5px 12px 5px 5px;cursor:pointer;color:var(--text);font-weight:600;font-size:13px}
-  .prof-btn:hover{border-color:var(--accent)}
-  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:.25s;z-index:40}
-  .overlay.open{opacity:1;pointer-events:auto}
-  .drawer{position:fixed;top:0;right:0;height:100%;width:340px;max-width:90vw;background:var(--panel);
-    border-left:1px solid var(--line);transform:translateX(100%);transition:transform .25s;z-index:50;
-    overflow-y:auto;padding:18px}
-  .drawer.open{transform:translateX(0)}
-  .drawer-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-  .chip-btn{background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:6px 12px;
-    font-size:12px;cursor:pointer;color:var(--text)}
-  .chip-btn:hover{border-color:var(--accent);background:rgba(139,92,246,.12)}
-  .hero{background:linear-gradient(120deg,rgba(123,47,247,.12),rgba(228,0,43,.07));border:1px solid var(--line);
-    border-radius:var(--radius);padding:14px;margin-bottom:16px}
-  .hero h3{margin:0 0 4px;font-size:16px}
-  .bubble{max-width:85%;padding:8px 11px;border-radius:12px;font-size:13px;line-height:1.4;white-space:pre-wrap}
-  .bubble.user{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:4px}
-  .bubble.bot{align-self:flex-start;background:var(--panel2);border:1px solid var(--line);border-bottom-left-radius:4px}
-  .bubble.tools{align-self:flex-start;font-size:10px;color:var(--muted);background:none;border:none;padding:2px 4px}
-  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel2);
-    border:1px solid var(--line);padding:10px 16px;border-radius:10px;font-size:13px;opacity:0;
-    transition:.3s;pointer-events:none}
-  .toast.show{opacity:1}
-</style>
+<title>Сільпо Pack Agent</title>
+<link rel="stylesheet" href="/app.css">
 </head>
 <body>
-<header>
-  <div class="logo"></div>
-  <div style="flex:1">
-    <h1>Сільпо Food Assistant</h1>
-    <div class="sub">не знаєш що купити? опиши настрій — асистент збере кошик за тебе</div>
-  </div>
-  <button class="prof-btn" onclick="openDrawer()" title="Мій профіль">
-    <span class="avatar" id="avatar">?</span>
-    <span id="header-name">Профіль</span>
-  </button>
-</header>
+<div class="page"><div class="cols main">
 
-<div class="wrap">
-  <!-- ЛІВА КОЛОНКА: профіль + сьогодні для тебе + нагороди -->
-  <div>
-    <div class="hero">
-      <h3 id="hero-hi">Привіт! 👋</h3>
-      <div class="muted" style="font-size:13px">Не знаєш, що купити? Просто напиши в чат настрій, подію чи бюджет — і я зберу кошик за тебе. Або обери ідею нижче.</div>
-    </div>
-
-    <div class="card">
-      <h2>Сьогодні для тебе</h2>
-      <div id="triggers"><div class="muted">Натисни «Профіль» угорі й заповни про себе.</div></div>
-    </div>
-
-    <div class="card">
-      <h2>Мої знижки з ігор</h2>
-      <div id="rewards"><div class="muted">Ще немає. Зіграй у гру 🎨</div></div>
-      <button class="orange" style="width:100%;margin-top:8px" onclick="openGame()">🎨 Намалюй продукт → знижка</button>
-    </div>
-
-    <div class="card" id="perks-card" style="display:none">
-      <h2>Купони та промо (Сільпо)</h2>
-      <div id="perks"><div class="muted">Перемкни «live Сільпо».</div></div>
-    </div>
+  <!-- сценарії — поза «телефоном» -->
+  <div class="col">
+    <section class="card">
+      <div class="head"><div class="t"><h2 style="margin:0">Сценарії</h2>
+        <div class="soft">Та сама фраза, яку сказала б людина</div></div></div>
+      <div class="viewswitch" style="margin-bottom:12px">
+        <button data-mode="direct" aria-pressed="true" onclick="setMode('direct')">Напряму</button>
+        <button data-mode="llm" aria-pressed="false" onclick="setMode('llm')">Через модель</button>
+      </div>
+      <p class="soft" id="mode-note" style="margin:0 0 12px"></p>
+      <div id="scenarios"></div>
+    </section>
   </div>
 
-  <!-- ЦЕНТР: чат + пошук + товари -->
-  <div>
-    <div class="card" id="chat-card">
-      <h2>Асистент <span id="chat-badge" class="muted" style="font-size:11px;text-transform:none;letter-spacing:0"></span>
-        <span id="chat-src" class="badge" style="text-transform:none;letter-spacing:0">mock</span></h2>
-      <div id="chat-log" style="max-height:260px;overflow:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:10px">
-        <div class="bubble bot">Привіт! Не знаєш, що купити? Опиши настрій, подію чи бюджет — і я сам зберу тобі кошик. Наприклад: «збери вечір кіно до 300 грн» або «що приготувати на вечерю?»</div>
+  <!-- застосунок: чат і кошик -->
+  <div class="col">
+    <div id="alerts"></div>
+    <div class="appframe">
+      <div class="appbar">
+        <span class="mushroom"></span>
+        <span class="ttl">Машрум Геннадійович</span>
+        <button class="ico" title="Про асистента" onclick="about()">i</button>
       </div>
-      <div class="row" style="margin-bottom:8px;flex-wrap:wrap;gap:6px">
-        <span class="chip-btn" onclick="askChat('Здивуй мене — збери щось смачне до 300 грн')">🎲 Здивуй мене</span>
-        <span class="chip-btn" onclick="askChat('Що приготувати на вечерю?')">🍽️ Що на вечерю?</span>
-        <span class="chip-btn" onclick="askChat('Збери вечір кіно до 300 грн')">🍿 Вечір кіно</span>
-        <span class="chip-btn" onclick="askChat('Хочу щось швидко перекусити')">⚡ Перекус</span>
+      <div class="apptabs">
+        <button aria-selected="true" onclick="appTab('chat')">Чат</button>
+        <button aria-selected="false" onclick="appTab('cart')">Кошик</button>
       </div>
-      <div class="row">
-        <input id="chat-input" placeholder="напиши, що хочеш поїсти…" onkeydown="if(event.key==='Enter')sendChat()">
-        <button style="flex:0 0 auto" onclick="sendChat()">➤</button>
+
+      <div class="appbody" id="tab-chat">
+        <div id="log"></div>
+        <div class="quicks" id="quicks"></div>
+      </div>
+
+      <div class="appbody" id="tab-cart" hidden><div id="cart" class="muted">—</div></div>
+
+      <div class="appfoot" id="foot-chat">
+        <div class="sendbar">
+          <input id="ask" placeholder="Ваше повідомлення"
+                 onkeydown="if(event.key==='Enter')send()">
+          <button class="send" onclick="send()" title="Надіслати">➤</button>
+        </div>
+        <p class="soft" id="chat-note" style="margin:7px 2px 0"></p>
       </div>
     </div>
 
-    <div class="card">
-      <h2>Пошук товарів</h2>
-      <div class="row">
-        <input id="q" placeholder="спагеті, попкорн, куряче філе…" onkeydown="if(event.key==='Enter')doSearch()">
-        <button style="flex:0 0 auto" onclick="doSearch()">Знайти</button>
-      </div>
-      <div class="row" style="margin-top:8px;align-items:center">
-        <span class="muted" style="flex:0 0 auto">Дані:</span>
-        <button id="src-mock" class="sm" style="flex:0 0 auto" onclick="setSource('mock')">mock</button>
-        <button id="src-live" class="ghost sm" style="flex:0 0 auto" onclick="setSource('live')">live Сільпо</button>
-        <span id="live-note" class="muted" style="flex:2;font-size:11px"></span>
-      </div>
-      <div class="row" id="store-row" style="display:none;margin-top:8px">
-        <select id="city" onchange="loadBranches()"><option value="">місто…</option></select>
-        <select id="branch" onchange="pickBranch()"><option value="">магазин…</option></select>
-      </div>
-      <div class="row" style="margin-top:8px">
-        <button class="ghost sm" onclick="quickRecipe('карбонара')">🍝 Карбонара</button>
-        <button class="ghost sm" onclick="quickRecipe('вечір кіно')">🍿 Вечір кіно</button>
-        <button class="ghost sm" onclick="quickRecipe('мексиканська')">🌮 Мексиканська</button>
-      </div>
-    </div>
-    <div class="card">
-      <h2 id="results-title">Результати</h2>
-      <div id="results" class="grid"><div class="muted">Почни пошук вище.</div></div>
-    </div>
+    <section class="card" style="margin-top:16px"><div id="pack"></div></section>
   </div>
 
-  <!-- ПРАВА КОЛОНКА: кошик -->
-  <div>
-    <div class="card">
-      <h2>Кошик</h2>
-      <div id="cart"><div class="muted">Порожньо.</div></div>
-      <div class="total"><span>Разом</span><span id="cart-total">0 грн</span></div>
-      <label>Купон</label>
-      <select id="coupon"><option value="">без купона</option></select>
-      <label>Слот доставки</label>
-      <select id="slot"><option value="">без доставки</option></select>
-      <div class="row" style="margin-top:12px">
-        <button onclick="doCheckout()">Оформити</button>
-        <button class="ghost" onclick="clearCart()">Очистити</button>
-      </div>
-      <div id="checkout-result"></div>
-    </div>
-  </div>
-</div>
+  <div class="col">
+    <section class="card mobile-only" style="margin-bottom:16px">
+      <h3>Сценарії</h3>
+      <div id="scenarios-2"></div>
+    </section>
 
-<!-- ПАНЕЛЬ ПРОФІЛЮ (як у месенджерах — відкривається кнопкою) -->
-<div id="drawer-overlay" class="overlay" onclick="closeDrawer()"></div>
-<aside id="profile-drawer" class="drawer">
-  <div class="drawer-head">
-    <h2 style="margin:0">Мій профіль</h2>
-    <button class="ghost sm" onclick="closeDrawer()">✕</button>
+    <section class="card desktop-only">
+      <div class="head"><div class="t"><h2 style="margin:0">Кошик «Сільпо»</h2>
+        <div class="soft">Справжній кошик акаунта</div></div>
+        <button class="go ghost" onclick="renderCart($('#cart-side'))">Оновити</button></div>
+      <div id="cart-side" class="muted">—</div>
+    </section>
+    <div id="payment" class="desktop-only"></div>
+    <section class="card desktop-only">
+      <h3>Згорають сьогодні</h3>
+      <div id="expiring" class="muted">—</div>
+    </section>
   </div>
-  <div class="muted" style="font-size:12px;margin-bottom:10px">Це впливає на те, що асистент тобі пропонує.</div>
-  <label>Імʼя</label><input id="p-name" placeholder="Арсен">
-  <label>Люблю (через кому)</label><input id="p-likes" placeholder="паста, кава">
-  <label>Не люблю</label><input id="p-dislikes" placeholder="гриби">
-  <label>Алергії</label><input id="p-allergies" placeholder="горіхи">
-  <label>Хобі</label><input id="p-hobbies" placeholder="малювання, кіно">
-  <label>Інтереси (фільми/ігри)</label><input id="p-interests" placeholder="Веном">
-  <label>Статус</label>
-  <select id="p-rel">
-    <option value="">—</option><option value="single">сам/сама</option>
-    <option value="relationship">у стосунках</option><option value="married">одружений/на</option>
-  </select>
-  <div class="row" style="margin-top:14px">
-    <button onclick="saveProfile()">Зберегти</button>
-    <button class="ghost" onclick="resetProfile()">Скинути</button>
-  </div>
-  <button class="orange sm" style="width:100%;margin-top:8px" onclick="closeDrawer();openOnboarding()">✨ Майстер знайомства</button>
-</aside>
 
-<!-- ОНБОРДИНГ: знайомство при першому відкритті -->
-<dialog id="onboarding">
-  <h2 style="margin-top:0">Привіт! 👋 Давай знайомитись</h2>
-  <p class="muted" style="margin:0 0 4px">Розкажи трохи про себе — і я підбиратиму їжу саме під тебе.</p>
-  <div id="ob-progress" class="muted" style="font-size:11px;margin-bottom:8px"></div>
-  <div id="ob-body" style="min-height:96px"></div>
-  <div class="row" style="margin-top:6px">
-    <button class="ghost" id="ob-back" onclick="obBack()">Назад</button>
-    <button id="ob-next" onclick="obNext()">Далі</button>
-  </div>
-  <div style="text-align:center;margin-top:8px">
-    <a href="#" onclick="obSkip();return false" class="muted" style="font-size:11px">Пропустити</a>
-  </div>
-</dialog>
+</div></div>
 
-<!-- ГРА: намалюй продукт -->
-<dialog id="game">
-  <h2 style="margin-top:0">🎨 Намалюй <span id="game-target">сир</span> — і отримай знижку</h2>
-  <p class="muted" style="margin:0">Намалюй продукт за 20 секунд. Здай малюнок — і знижка твоя (демо: зараховується завжди).</p>
-  <canvas id="pad" width="400" height="260"></canvas>
-  <div class="row">
-    <button class="ghost" onclick="clearPad()">Стерти</button>
-    <button class="orange" onclick="submitDrawing()">Здати малюнок</button>
-    <button class="ghost" onclick="game.close()">Закрити</button>
-  </div>
-</dialog>
+<dialog id="picker"><div id="picker-body"></div></dialog>
+<dialog id="quiz"><div id="quiz-body"></div></dialog>
 
-<div class="toast" id="toast"></div>
-
+<script src="/app.js"></script>
 <script>
-const $ = s => document.querySelector(s);
-const api = async (url, method='GET', body=null) => {
-  const r = await fetch(url, {method, headers:{'Content-Type':'application/json'},
-    body: body ? JSON.stringify(body) : null});
-  return r.json();
-};
-const csv = v => v.split(',').map(s=>s.trim()).filter(Boolean);
-const toast = m => { const t=$('#toast'); t.textContent=m; t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'),1800); };
-
-// ---- Профіль ----
-async function saveProfile(){
-  const body = {
-    name: $('#p-name').value || null,
-    likes: csv($('#p-likes').value),
-    dislikes: csv($('#p-dislikes').value),
-    allergies: csv($('#p-allergies').value),
-    hobbies: csv($('#p-hobbies').value),
-    interests: csv($('#p-interests').value),
-    relationship: $('#p-rel').value || null,
-    mode: 'replace',
-  };
-  await api('/api/profile','POST',body);
-  toast('Профіль збережено');
-  loadTriggers(); updateHeaderProfile(body.name); closeDrawer();
-}
-async function resetProfile(){
-  await api('/api/profile/reset','POST');
-  ['name','likes','dislikes','allergies','hobbies','interests'].forEach(f=>$('#p-'+f).value='');
-  $('#p-rel').value=''; loadTriggers(); updateHeaderProfile(null);
-  try{ localStorage.removeItem('ob_done'); }catch(e){}
-  closeDrawer(); openOnboarding();
-}
-async function loadProfile(){
-  const {profile:p} = await api('/api/profile');
-  $('#p-name').value=p.name||''; $('#p-likes').value=(p.likes||[]).join(', ');
-  $('#p-dislikes').value=(p.dislikes||[]).join(', '); $('#p-allergies').value=(p.allergies||[]).join(', ');
-  $('#p-hobbies').value=(p.hobbies||[]).join(', '); $('#p-interests').value=(p.interests||[]).join(', ');
-  $('#p-rel').value=p.relationship||'';
-  updateHeaderProfile(p.name);
-}
-function updateHeaderProfile(name){
-  $('#avatar').textContent = name ? name.trim()[0].toUpperCase() : '?';
-  $('#header-name').textContent = name || 'Профіль';
-  const hi=$('#hero-hi'); if(hi) hi.textContent = name ? ('Привіт, '+name+'! 👋') : 'Привіт! 👋';
-}
-// ---- Панель профілю (drawer) ----
-function openDrawer(){ $('#profile-drawer').classList.add('open'); $('#drawer-overlay').classList.add('open'); }
-function closeDrawer(){ $('#profile-drawer').classList.remove('open'); $('#drawer-overlay').classList.remove('open'); }
-function askChat(text){ $('#chat-input').value=text; sendChat(); }
-
-// ---- Тригери ----
-async function loadTriggers(){
-  const {suggestions} = await api('/api/triggers');
-  const box = $('#triggers');
-  if(!suggestions.length){ box.innerHTML='<div class="muted">Поки нема підказок — додай хобі/інтереси.</div>'; return; }
-  box.innerHTML = suggestions.map(s=>`
-    <div class="trigger">
-      <div class="msg">${s.message}</div>
-      ${s.game ? `<button class="orange sm" onclick="openGame()">🎨 Зіграти</button>`
-        : `<button class="sm" onclick="searchFor('${s.silpo_query||''}')">Підібрати товари</button>`}
-    </div>`).join('');
-}
-
-// ---- Пошук / товари ----
-let SOURCE = 'mock';
-async function setSource(s){
-  if(s==='live'){
-    const st = await api('/api/live/status');
-    if(!st.available){ toast('Live недоступний: '+(st.reason||'')); return; }
-    $('#live-note').textContent = (st.branch?('магазин: '+st.branch+' · '):'')+'кошик — демо';
-    $('#store-row').style.display='flex'; $('#perks-card').style.display='block';
-    if($('#city').options.length<=1) loadCities();
-    loadLivePerks();
-  } else {
-    $('#live-note').textContent='';
-    $('#store-row').style.display='none'; $('#perks-card').style.display='none';
-  }
-  SOURCE = s;
-  $('#src-mock').className = s==='mock'?'sm':'ghost sm';
-  $('#src-live').className = s==='live'?'sm':'ghost sm';
-  const cs=$('#chat-src'); cs.textContent = s==='live'?'live · Сільпо MCP':'mock';
-  cs.style.background = s==='live'?'rgba(18,183,106,.14)':'rgba(228,0,43,.1)';
-  cs.style.color = s==='live'?'#0e8f54':'#e4002b';
-  loadCart();  // показати відповідний кошик (мок або live-пропозиція)
-  if($('#q').value.trim()) doSearch();
-}
-async function loadCities(){
-  const {cities,error} = await api('/api/live/cities');
-  if(error){ toast('Магазини: '+error); return; }
-  $('#city').innerHTML = '<option value="">місто…</option>' +
-    cities.map(c=>`<option value="${c}">${c}</option>`).join('');
-}
-async function loadBranches(){
-  const city = $('#city').value;
-  const {branches} = await api('/api/live/branches?city='+encodeURIComponent(city));
-  $('#branch').innerHTML = '<option value="">магазин…</option>' +
-    branches.map(b=>`<option value="${b.branchId}">${b.address||b.label}</option>`).join('');
-}
-async function pickBranch(){
-  const id = $('#branch').value; if(!id) return;
-  const r = await api('/api/live/set_branch','POST',{branchId:id});
-  if(r.error){ toast(r.error); return; }
-  $('#live-note').textContent = 'магазин: '+r.branch+' · кошик — демо';
-  toast('Магазин: '+r.branch); if($('#q').value.trim()) doSearch();
-}
-async function loadLivePerks(){
-  const box=$('#perks'); box.innerHTML='<div class="muted">Завантажую…</div>';
-  const [c,p] = await Promise.all([api('/api/coupons?source=live'), api('/api/promos?source=live')]);
-  let html='';
-  (c.coupons||[]).forEach(x=>{ html+=`<div class="reward" style="background:rgba(249,115,22,.1);border-color:rgba(249,115,22,.3)">🎟️ ${x.title}<br><span class="muted">${x.period}${x.note?' · '+x.note:''}</span></div>`; });
-  (p.promos||[]).slice(0,6).forEach(x=>{ html+=`<div class="reward" style="background:rgba(139,92,246,.1);border-color:rgba(139,92,246,.3)">⭐ ${x.title} · <b>${x.reward}</b><br><span class="muted">${x.period}</span></div>`; });
-  box.innerHTML = html || '<div class="muted">Немає активних купонів/промо.</div>';
-}
-
-// ---- Чат із Qwen ----
 let CHAT = [];
-async function chatStatus(){
-  const st = await api('/api/chat/status');
-  $('#chat-badge').textContent = st.available
-    ? (st.has_model ? '· '+st.model : '· постав `ollama pull '+st.model+'`')
-    : '· offline — постав Ollama';
+const QUICKS = ['Повтори останній чек', 'Що в мене закінчилось',
+                'Вечеря на 400 грн', 'Чи влізе кошик у доставку'];
+
+function appTab(name){
+  ['chat','cart'].forEach(n => $('#tab-'+n).hidden = n !== name);
+  $('#foot-chat').hidden = name !== 'chat';
+  document.querySelectorAll('.apptabs button').forEach((b,i) =>
+    b.setAttribute('aria-selected', (i===0) === (name==='chat')));
+  if(name === 'cart') renderCart($('#cart'));
 }
-function pushBubble(cls, text){
-  const d=document.createElement('div'); d.className='bubble '+cls; d.textContent=text;
-  $('#chat-log').appendChild(d); $('#chat-log').scrollTop=1e9; return d;
+function bubble(cls, text){
+  const map = {me:'you', it:'bot', tools:'sys'};
+  $('#log').insertAdjacentHTML('beforeend',
+    `<div class="msg ${map[cls] || cls}">${text}</div>`);
+  $('#tab-chat').scrollTop = 1e6;
 }
-async function sendChat(){
-  const inp=$('#chat-input'); const text=inp.value.trim(); if(!text) return;
-  inp.value=''; pushBubble('user',text); CHAT.push({role:'user',content:text});
-  const typing=pushBubble('bot', SOURCE==='live'?'шукаю в Сільпо…':'друкую…');
-  const r = await api('/api/chat','POST',{messages:CHAT, source:SOURCE});
-  typing.remove();
-  if(r.error){ pushBubble('bot','⚠️ '+r.error); return; }
-  pushBubble('bot', r.reply || '(порожньо)');
-  CHAT.push({role:'assistant',content:r.reply||''});
-  if(r.tools_used && r.tools_used.length)
-    pushBubble('tools','🔧 '+r.tools_used.map(t=>t.name+(t.source==='live'?' · Сільпо MCP':'')).join(', '));
-  loadCart(); loadTriggers(); loadRewards();  // асистент міг щось змінити
+function about(){
+  $('#quiz-body').innerHTML = `
+    <h2 style="margin:0 0 8px">Я — Машрум Геннадійович</h2>
+    <p class="muted" style="margin:0 0 10px">У режимі цього розширення допомагаю так:</p>
+    <ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.6">
+      <li>читаю твої чеки й рахую, що вже мало б закінчитись;</li>
+      <li>збираю пак і кладу його у <b>справжній</b> кошик «Сільпо»;</li>
+      <li>дивлюсь, які з твоїх купонів спрацюють саме тут;</li>
+      <li>перевіряю, чи немає в наборі того, що тобі не можна;</li>
+      <li>кажу, скільки бракує до Дольок і до дешевшої доставки.</li>
+    </ul>
+    <p class="soft" style="margin:12px 0 0">Оформлення замовлення завжди підтверджуєш ти.</p>
+    <button class="go" style="width:100%;margin-top:12px" onclick="quiz.close()">Зрозуміло</button>`;
+  quiz.showModal();
 }
-function prodCard(p){
-  const disc = p.discount_percent ? `<span class="badge">-${p.discount_percent}%</span>` : '';
-  const old = p.old_price ? `<span class="old">${p.old_price}</span>` : '';
-  const img = p.image ? `<img src="${p.image}" loading="lazy" style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex:0 0 auto">` : '';
-  const meta = [p.brand, p.unit, p.category].filter(Boolean).join(' · ');
-  const action = SOURCE==='live'
-    ? `<span class="muted" style="font-size:10px">live · перегляд</span>`
-    : `<button class="sm" style="margin-top:5px" onclick='addCart("${p.id}")'>+ у кошик</button>`;
-  return `<div class="prod">
-    <div style="display:flex;gap:8px;align-items:center;min-width:0">${img}
-      <div style="min-width:0"><div class="name">${p.name} ${disc}</div>
-      <div class="meta">${meta}</div></div></div>
-    <div style="text-align:right;flex:0 0 auto">
-      <div class="price">${old}${p.price} грн</div>${action}
-    </div></div>`;
+async function send(){
+  const text = $('#ask').value.trim(); if(!text) return;
+  $('#ask').value=''; bubble('me', text); CHAT.push({role:'user', content:text});
+  bubble('it','…');
+  const r = await api('/api/chat','POST',{messages:CHAT});
+  $('#log').lastChild.remove();
+  if(r.tools_used?.length) bubble('tools','→ '+r.tools_used.map(t=>t.name).join(' · '));
+  bubble('it', r.reply || r.error || '—');
+  if(r.reply) CHAT.push({role:'assistant', content:r.reply});
+  if(r.result?.items) renderPack(r.result);
+  else { const d = await api('/api/packs'); if(d.packs?.length) openPack(d.packs[0].id); }
 }
-async function doSearch(){
-  const q = $('#q').value.trim();
-  $('#results').innerHTML = '<div class="muted">Шукаю…</div>';
-  const r = await api('/api/search?q='+encodeURIComponent(q)+'&source='+SOURCE);
-  const results = r.results || [];
-  $('#results-title').textContent = `Результати (${results.length})` + (SOURCE==='live'?' · live':'');
-  if(r.error){ $('#results').innerHTML = `<div class="muted" style="color:#fca5a5">${r.error}</div>`; return; }
-  $('#results').innerHTML = results.length ? results.map(prodCard).join('')
-    : '<div class="muted">Нічого не знайдено.</div>';
-}
-function searchFor(q){ $('#q').value=q; doSearch(); }
-async function quickRecipe(q){
-  const {recipes} = await api('/api/recipe?q='+encodeURIComponent(q));
-  if(!recipes.length){ toast('Рецепт не знайдено'); return; }
-  const r = recipes[0];
-  $('#results-title').textContent = `${r.name} · ~${r.estimated_total_uah} грн`;
-  $('#results').innerHTML = r.products.map(prodCard).join('') +
-    `<button class="orange" style="grid-column:1/-1" onclick='addMany(${JSON.stringify(r.product_ids)})'>Додати весь набір у кошик</button>`;
+function quick(text){ $('#ask').value = text; send(); }
+
+async function loadExpiring(){
+  const e = await api('/api/expiring?days=1');
+  const all = [...(e.promos||[]), ...(e.coupons||[])];
+  $('#expiring').innerHTML = all.length
+    ? all.slice(0,6).map((x,i) => ticket({reward:x.reward, text:x.text}, i)).join('')
+    : '<span class="muted">Нічого термінового. Персональні промо оновлюються щотижня.</span>';
 }
 
-// ---- Кошик ----
-async function addCart(id){ const r=await api('/api/cart/add','POST',{product_id:id}); renderCart(r.cart||await api('/api/cart')); toast('Додано'); }
-async function addMany(ids){ const r=await api('/api/cart/add_many','POST',{product_ids:ids}); renderCart(r.cart); toast('Набір додано'); }
-async function rmCart(id){ const r=await api('/api/cart/remove','POST',{product_id:id, source:SOURCE}); renderCart(r); }
-async function clearCart(){ const r=await api('/api/cart/clear','POST',{source:SOURCE}); renderCart(r.cart||r); $('#checkout-result').innerHTML=''; }
-function renderCart(c){
-  const box=$('#cart');
-  if(!c.items || !c.items.length){ box.innerHTML='<div class="muted">Порожньо.</div>'; }
-  else box.innerHTML = c.items.map(i=>`<div class="prod">
-      <div style="display:flex;gap:8px;align-items:center;min-width:0">
-      ${i.image?`<img src="${i.image}" loading="lazy" style="width:36px;height:36px;border-radius:7px;object-fit:cover;flex:0 0 auto">`:''}
-      <div style="min-width:0"><div class="name">${i.name}</div><div class="meta">${i.quantity} × ${i.price_uah} грн</div></div></div>
-      <div style="text-align:right;flex:0 0 auto"><div class="price">${i.line_total_uah} грн</div>
-      <button class="ghost sm" style="margin-top:5px" onclick='rmCart("${i.product_id}")'>✕</button></div></div>`).join('');
-  $('#cart-total').textContent = (c.total_uah||0)+' грн';
-}
-async function loadCart(){ const c=await api('/api/cart'+(SOURCE==='live'?'?source=live':'')); renderCart(c); return c; }
-
-async function doCheckout(){
-  const box=$('#checkout-result');
-  if(SOURCE==='live'){
-    const c=await api('/api/cart?source=live');
-    if(!c.items||!c.items.length){ box.innerHTML='<div class="muted" style="margin-top:10px">Кошик порожній.</div>'; return; }
-    box.innerHTML=`<div class="reward" style="margin-top:12px">
-      <b>🛒 Пропозиція готова</b><br>${c.items.length} товар(и/ів) на <b>${c.total_uah} грн</b><br>
-      <span class="muted">Це реальні товари Сільпо. Оформлення й оплату підтверджуєш сам у застосунку/на сайті Сільпо.</span></div>`;
-    return;
-  }
-  const r = await api('/api/checkout','POST',{coupon_id:$('#coupon').value||null, delivery_slot_id:$('#slot').value||null});
-  if(r.error){ box.innerHTML=`<div class="muted" style="margin-top:10px;color:#fca5a5">${r.error}</div>`; return; }
-  const s=r.summary;
-  box.innerHTML=`<div class="reward" style="margin-top:12px">
-    <b>✅ ${r.status}</b><br>Підсумок: ${s.subtotal_uah} грн
-    ${s.discount_uah?`− ${s.discount_uah} (${s.coupon})`:''}
-    ${s.delivery_price_uah?`+ ${s.delivery_price_uah} доставка`:''}
-    <br><b>До сплати: ${s.total_uah} грн</b><br>
-    <span class="muted">Оплату підтверджує людина за посиланням.</span></div>`;
-}
-
-// ---- Купони / слоти ----
-async function loadCoupons(){
-  const {coupons}=await api('/api/coupons');
-  $('#coupon').innerHTML='<option value="">без купона</option>'+coupons.map(c=>`<option value="${c.id}">${c.title}</option>`).join('');
-  const {slots}=await api('/api/slots');
-  $('#slot').innerHTML='<option value="">без доставки</option>'+slots.map(s=>`<option value="${s.id}">${s.date} ${s.window} · ${s.price_uah} грн</option>`).join('');
-}
-
-// ---- Нагороди / гра ----
-async function loadRewards(){
-  const {rewards}=await api('/api/rewards');
-  $('#rewards').innerHTML = rewards.length
-    ? rewards.map(r=>`<div class="reward">🎁 ${r.title} · <b>${r.discount}</b><br>код: <code>${r.code}</code></div>`).join('')
-    : '<div class="muted">Ще немає. Зіграй у гру 🎨</div>';
-}
-const game=$('#game'); const pad=$('#pad'); const ctx=pad.getContext('2d');
-let drawing=false;
-function openGame(){ clearPad(); game.showModal(); }
-function clearPad(){ ctx.fillStyle='#fff'; ctx.fillRect(0,0,pad.width,pad.height); ctx.strokeStyle='#8b5cf6'; ctx.lineWidth=4; ctx.lineCap='round'; }
-function pos(e){ const r=pad.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return [t.clientX-r.left, t.clientY-r.top]; }
-pad.addEventListener('pointerdown',e=>{drawing=true; const [x,y]=pos(e); ctx.beginPath(); ctx.moveTo(x,y);});
-pad.addEventListener('pointermove',e=>{ if(!drawing)return; const [x,y]=pos(e); ctx.lineTo(x,y); ctx.stroke(); });
-window.addEventListener('pointerup',()=>drawing=false);
-async function submitDrawing(){
-  await api('/api/reward','POST',{title:'Знижка за малюнок сиру', discount:'-15% на сир'});
-  game.close(); toast('🎉 Знижку зараховано!'); loadRewards();
-}
-
-// ---- Онбординг-майстер ----
-const OB_STEPS = [
-  {key:'name', q:'Як тебе звати?', ph:'Арсен'},
-  {key:'likes', q:'Що любиш їсти?', hint:'страви, кухні, продукти — через кому', ph:'паста, суші, кава'},
-  {key:'dislikes', q:'Чого не любиш або уникаєш?', ph:'гриби'},
-  {key:'allergies', q:'Чи є алергії?', hint:'важливо — такого ніколи не пропонуватиму', ph:'горіхи'},
-  {key:'relationship', q:'Твій статус?', choice:[['single','Сам/сама'],['relationship','У стосунках'],['married','Одружений/на']]},
-  {key:'family', q:'Готуєш ще на когось?', hint:'напр. партнер, діти — або лиши порожнім', ph:'партнер'},
-  {key:'hobbies', q:'Чим захоплюєшся?', hint:'впливає на підбір: спорт→білок, кіно→снеки', ph:'кіно, спорт, малювання'},
-  {key:'interests', q:'Улюблені фільми, ігри, музика?', hint:'для приємних сюрпризів', ph:'Веном'},
-];
-const ob = $('#onboarding');
-let obI = 0, obAns = {};
-function openOnboarding(){ obI=0; obAns={}; obRender(); ob.showModal(); }
-function obRender(){
-  const s = OB_STEPS[obI];
-  $('#ob-progress').textContent = `Крок ${obI+1} з ${OB_STEPS.length}`;
-  let ctrl;
-  if(s.choice){
-    ctrl = '<div class="row" style="flex-wrap:wrap">'+s.choice.map(([v,l])=>
-      `<button class="ghost" data-v="${v}" onclick="obPick(this,'${v}')" style="flex:1 0 40%">${l}</button>`).join('')+'</div>';
-  } else {
-    ctrl = `<input id="ob-input" placeholder="${s.ph||''}" value="${obAns[s.key]||''}" onkeydown="if(event.key==='Enter')obNext()">`;
-  }
-  $('#ob-body').innerHTML = `<div style="font-size:15px;font-weight:600;margin-bottom:4px">${s.q}</div>`+
-    (s.hint?`<div class="muted" style="font-size:11px;margin-bottom:8px">${s.hint}</div>`:'<div style="height:8px"></div>')+ctrl;
-  $('#ob-back').style.visibility = obI===0 ? 'hidden':'visible';
-  $('#ob-next').textContent = obI===OB_STEPS.length-1 ? 'Готово ✨':'Далі';
-  const inp=$('#ob-input'); if(inp) setTimeout(()=>inp.focus(),50);
-}
-function obPick(btn,v){
-  obAns[OB_STEPS[obI].key]=v;
-  [...btn.parentNode.children].forEach(b=>b.className='ghost');
-  btn.className='';  // підсвітити обране
-}
-function obCapture(){ const inp=$('#ob-input'); if(inp) obAns[OB_STEPS[obI].key]=inp.value.trim(); }
-function obBack(){ obCapture(); if(obI>0){ obI--; obRender(); } }
-async function obNext(){
-  obCapture();
-  if(obI < OB_STEPS.length-1){ obI++; obRender(); return; }
-  await obFinish();
-}
-async function obFinish(){
-  const a=obAns;
-  await api('/api/profile','POST',{
-    name:a.name||null, likes:csv(a.likes||''), dislikes:csv(a.dislikes||''),
-    allergies:csv(a.allergies||''), relationship:a.relationship||null,
-    family:csv(a.family||''), hobbies:csv(a.hobbies||''), interests:csv(a.interests||''),
-    mode:'replace'});
-  try{ localStorage.setItem('ob_done','1'); }catch(e){}
-  ob.close(); await loadProfile(); loadTriggers();
-  toast('Готово! Тепер підказки — саме для тебе ✨');
-}
-function obSkip(){ try{ localStorage.setItem('ob_done','1'); }catch(e){} ob.close(); }
-
-// ---- Старт ----
-(async ()=>{
-  await loadProfile(); loadTriggers(); loadCart(); loadCoupons(); loadRewards(); chatStatus();
-  const {is_empty} = await api('/api/profile');
-  let done=null; try{ done=localStorage.getItem('ob_done'); }catch(e){}
-  if(is_empty && !done) openOnboarding();
+mountTop('home');
+(async () => {
+  renderPack(null);
+  renderScenarios($('#scenarios'), $('#scenarios-2'));
+  $('#quicks').innerHTML = QUICKS.map(q =>
+    `<button onclick="quick('${q}')">${q}</button>`).join('');
+  bubble('it', 'Готовий. Питайте.');
+  const s = await loadStatus();
+  $('#mode-note').textContent = s.model_available
+    ? `Модель ${s.model} на звʼязку — повний агентний цикл.`
+    : 'Модель офлайн: вільний текст розбираю правилами й усе одно виконую сценарій.';
+  $('#chat-note').textContent = s.model_available ? ''
+    : 'Без моделі намір визначаю за ключовими словами.';
+  await Promise.all([loadAllergies(), loadExpiring(), renderCart($('#cart-side'))]);
 })();
 </script>
 </body>

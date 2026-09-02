@@ -1,12 +1,14 @@
 """MCP-хост для веб-бекенду: робить його справжнім MCP-клієнтом.
 
-Підключається до наших локальних MCP-серверів (`profile` та `silpo-mock`) як
-stdio-клієнт, динамічно зчитує їхні інструменти (tools/list) і дозволяє
-викликати їх (tools/call). Саме ці інструменти передаються Qwen — тобто модель
-працює з РЕАЛЬНИМИ MCP-серверами по протоколу, а не з хардкодом.
+Підключається до наших MCP-серверів (`silpo-agent` та `profile`) як stdio-клієнт,
+динамічно зчитує їхні інструменти (tools/list) і викликає їх (tools/call). Саме
+ці інструменти передаються Qwen — модель працює по протоколу, а не з хардкодом.
 
-Сесії тримаються відкритими весь час життя застосунку (Starlette lifespan),
-тож стан (кошик у silpo-mock) спільний для чату й UI, які обидва ходять сюди.
+silpo-agent, своєю чергою, сам є MCP-клієнтом офіційного mcp.silpo.ua: ланцюг
+Qwen → MCP → наш агент → MCP → «Сільпо» лишається протокольним на всю глибину.
+
+Сесії живуть весь час роботи застосунку (Starlette lifespan), тож стан (кошик,
+паки) спільний для чату й UI.
 """
 
 from __future__ import annotations
@@ -23,9 +25,11 @@ from mcp.client.stdio import stdio_client, StdioServerParameters
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = sys.executable  # той самий venv-Python, що запустив uvicorn
 
+# Обидва — справжні MCP-сервери, підняті по stdio. silpo-agent усередині сам є
+# MCP-клієнтом офіційного mcp.silpo.ua, тож ланцюг лишається протокольним.
 SERVERS = {
-    "silpo-mock": [os.path.join(ROOT, "silpo_mcp", "server.py")],
-    "profile": [os.path.join(ROOT, "profile_mcp", "server.py")],
+    "silpo-agent": ["-m", "silpo_agent_mcp.server"],
+    "profile": ["-m", "profile_mcp.server"],
 }
 
 

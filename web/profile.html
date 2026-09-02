@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Профіль · Сільпо Pack Agent</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="page"><div class="cols profile">
+
+  <div class="col">
+    <section class="card"><div id="portrait"><div class="muted">Читаю акаунт «Сільпо»…</div></div></section>
+
+    <section class="card">
+      <h3>Як підбирати</h3>
+      <label class="toggle">
+        <input type="checkbox" id="bonus" onchange="saveToggle()">
+        <span class="track"></span>
+        <span class="lbl"><b>Пропонувати відразу з бонусами</b>
+          <span>Серед відповідних товарів агент братиме ті, на які діє знижка,
+            мультипак або персональне промо. «Повтори чек» шукатиме акційні аналоги.</span></span>
+      </label>
+    </section>
+
+    <section class="card">
+      <h3>Чого тобі не можна</h3>
+      <p class="soft" style="margin:0 0 9px">«Сільпо» зберігає дієти, але не алергії —
+        у «Просторі вподобань» такого поля немає. Це памʼятаємо ми.</p>
+      <input id="allergies" placeholder="горіхи, лактоза" onchange="saveAllergies()">
+      <div class="chips" id="allergy-tags" style="margin-top:10px"></div>
+    </section>
+
+    <section class="card">
+      <h3>Техніка на кухні</h3>
+      <p class="soft" style="margin:0 0 9px">Рецепти, які вимагають того, чого в тебе немає,
+        не пропонуватимуться.</p>
+      <div class="chips" id="equip"></div>
+    </section>
+  </div>
+
+  <div class="col">
+    <section class="card">
+      <div class="head"><div class="t"><h2>Вподобання</h2>
+        <div class="soft">Змінюються словами в чаті — агент оновить профіль сам</div></div>
+        <a class="go ghost" href="/" style="text-decoration:none">Відкрити чат</a></div>
+      <h3>Люблю</h3><div class="chips" id="likes"></div>
+      <h3>Не люблю</h3><div class="chips" id="dislikes"></div>
+      <h3>Дієти з акаунта «Сільпо»</h3><div class="chips" id="diets"></div>
+      <h3>Запамʼятані факти</h3><div id="facts" class="muted">—</div>
+    </section>
+
+    <section class="card">
+      <div class="head"><div class="t"><h2>Моя сімʼя</h2>
+        <div class="soft">Склад — із «Сільпо». Смаки кожного MCP поки не віддає</div></div></div>
+      <div id="family" class="muted">—</div>
+    </section>
+
+    <section class="card">
+      <div class="head"><div class="t"><h2>Департамент дивинок</h2>
+        <div class="soft">Свайп вправо — в «Обране» «Сільпо». Свайп уліво памʼятаємо ми:
+          в API місця для відмови немає</div></div></div>
+      <div id="deck"><button class="go" onclick="loadDeck($('#deck'))">Почати</button></div>
+    </section>
+
+    <section class="card">
+      <div class="head"><div class="t"><h2>Ваги смаку</h2>
+        <div class="soft">Росте від покупок і свайпів вправо, падає від замін і свайпів
+          уліво. Відʼємна вага — мʼяка нелюбов, не алергія</div></div>
+        <button class="go ghost" onclick="rebuildWeights()">Перерахувати з чеків</button></div>
+      <div id="weights" class="muted">—</div>
+    </section>
+
+    <section class="card">
+      <div class="head"><div class="t"><h2>Джерела даних</h2>
+        <div class="soft">Кожен — окремий MCP збоку застосунку-джерела. «Сільпо» не знає,
+          що ти не спав; трекер не знає про твою алергію. Зшиває агент</div></div></div>
+      <div id="connectors" class="muted">—</div>
+    </section>
+
+    <section class="card">
+      <h2>Останні чеки</h2>
+      <div id="receipts" class="muted">—</div>
+    </section>
+  </div>
+
+</div></div>
+
+<dialog id="picker"><div id="picker-body"></div></dialog>
+<dialog id="quiz"><div id="quiz-body"></div></dialog>
+
+<script src="/app.js"></script>
+<script>
+const EQUIP = ['сковорідка','каструля','духовка','аерогриль','мікрохвильовка',
+               'блендер','тостер','мультиварка','гриль'];
+let PROFILE = {};
+const tags = (list, cls='') => (list||[]).length
+  ? list.map(x => `<span class="tag ${cls}">${x}</span>`).join('')
+  : '<span class="soft">порожньо</span>';
+
+async function loadPortrait(){
+  const me = await api('/api/me');
+  if(bad(me)) return;
+  const r = me.receipts || {};
+  const habits = (me.habits||[]).map(h =>
+    `<div class="habit"><b>${h.name}</b> бере ${h.times} р. · цикл ~${h.cycle_days} дн.
+      ${h.due ? `<span class="due">минуло ${h.days_since} — пора</span>` : ''}</div>`).join('');
+  $('#portrait').innerHTML = `
+    <div class="who"><div class="ava">${(me.name||'?')[0]}</div>
+      <div><div class="nm">${me.name||'Гість'}</div>
+        <div class="muted">«${me.card||'—'}» · ${uah(me.bonuses_uah)} балобонусів</div></div></div>
+    <div class="grid2">
+      <div class="kpi"><b>${uah(r.spent_uah)} ₴</b><span>витрачено за ${r.count||0} чеків</span></div>
+      <div class="kpi good"><b>${uah(r.saved_uah)} ₴</b><span>зекономлено на знижках</span></div>
+      <div class="kpi"><b>${uah(r.avg_check_uah)} ₴</b><span>середній чек</span></div>
+      <div class="kpi"><b>${(me.habits||[]).length}</b><span>звичок розпізнано</span></div>
+    </div>
+    <p class="soft" style="margin:10px 0 0">Найчастіше: ${r.favourite_shop||'—'}</p>
+    ${habits ? `<h3>Що ти береш регулярно</h3>${habits}` : ''}`;
+  $('#diets').innerHTML = tags(me.diets_from_silpo);
+}
+
+async function loadPrefs(){
+  const d = await api('/api/preferences');
+  PROFILE = d.profile || {};
+  $('#likes').innerHTML = tags(PROFILE.likes);
+  $('#dislikes').innerHTML = tags(PROFILE.dislikes);
+  $('#bonus').checked = !!PROFILE.bonus_first;
+  $('#allergies').value = (PROFILE.allergies||[]).join(', ');
+  $('#allergy-tags').innerHTML = tags(PROFILE.allergies, 'stop');
+  ALLERGIES = [...(PROFILE.allergies||[]), ...(PROFILE.dislikes||[])];
+  const have = PROFILE.equipment || [];
+  $('#equip').innerHTML = EQUIP.map(e =>
+    `<button class="fbtn" aria-pressed="${have.includes(e)}" onclick="toggleEquip('${e}')">${e}</button>`).join('');
+  $('#facts').innerHTML = (d.facts||[]).length
+    ? d.facts.map(f => `<div class="habit"><b>${f.text}</b>
+        <span class="soft">${f.category||'без категорії'} · ${f.created_at}</span></div>`).join('')
+    : '<span class="soft">Ще нічого не запамʼятав.</span>';
+}
+async function saveToggle(){
+  await api('/api/profile','POST',{bonus_first: $('#bonus').checked});
+  toast($('#bonus').checked ? 'Тепер спершу шукаю акційне' : 'Підбираю без огляду на акції');
+}
+async function toggleEquip(item){
+  const have = new Set(PROFILE.equipment || []);
+  have.has(item) ? have.delete(item) : have.add(item);
+  await api('/api/profile','POST',{equipment:[...have], mode:'replace'});
+  toast('Оновив кухню'); loadPrefs();
+}
+async function saveAllergies(){
+  const list = $('#allergies').value.split(',').map(s=>s.trim()).filter(Boolean);
+  await api('/api/profile','POST',{allergies:list, mode:'replace'});
+  toast('Запамʼятав — цього не запропоную'); loadPrefs();
+}
+async function loadFamily(){
+  const f = await api('/api/family');
+  if(bad(f)) return;
+  $('#family').innerHTML = f.members.map(m => `
+    <div class="habit"><b>${m.name} <span class="soft">· ${m.role}${m.age ? ', '+m.age+' р.' : ''}</span></b>
+      ${m.known ? `любить: ${(m.likes||[]).join(', ')||'—'} · не можна: ${(m.allergies||[]).join(', ')||'—'}`
+        : '<span style="color:var(--red)">вподобань немає — MCP їх не віддає</span>'}
+      <button class="link" onclick="editMember('${m.id}','${m.name}')">заповнити</button></div>`).join('')
+    + f.pets.map(p => `<div class="habit"><b>${p.name} <span class="soft">· ${p.kind}</span></b>
+        корм додаватиметься автоматично</div>`).join('')
+    + `<p class="soft" style="margin-top:8px">${f.spec}</p>`;
+}
+function editMember(id, name){
+  $('#quiz-body').innerHTML = `
+    <h2 style="margin:0 0 2px">${name}</h2>
+    <div class="soft">Поки MCP не віддає «Простір вподобань», записуємо в себе.</div>
+    <label>Любить</label><input id="m-likes" placeholder="паста, суші">
+    <label>Не можна</label><input id="m-all" placeholder="арахіс">
+    <button class="go" style="width:100%;margin-top:12px" onclick="saveMember('${id}')">Зберегти</button>`;
+  quiz.showModal();
+}
+async function saveMember(id){
+  const csv = s => s.split(',').map(x=>x.trim()).filter(Boolean);
+  await api('/api/family/member','POST',{member_id:id,
+    likes:csv($('#m-likes').value), allergies:csv($('#m-all').value)});
+  quiz.close(); toast('Записав'); loadFamily();
+}
+async function loadReceipts(){
+  const d = await api('/api/receipts?limit=10');
+  $('#receipts').innerHTML = (d.receipts||[]).map((c,i) => `
+    <div class="prod"><div class="body">
+      <div class="line"><span class="nm">${c.date} · ${c.shop}</span>
+        <span class="pr">${uah(c.total_uah)} ₴</span></div>
+      <div class="why">${c.item_count} позицій · знижка ${uah(c.discount_uah)} ₴
+        ${c.magic_name ? ` · «${c.magic_name}»` : ''}</div>
+      <div class="why">${(c.items||[]).slice(0,4).join(' · ')}</div>
+      <div style="display:flex;gap:12px">
+        <button class="link" onclick="repeat(${i})">Повторити як пак →</button>
+        ${c.receipt_url ? `<a class="link" style="text-decoration:none"
+           href="${c.receipt_url}" target="_blank" rel="noopener">Оригінал чека →</a>` : ''}
+      </div></div></div>`).join('') || '<span class="soft">Чеків не знайшлось.</span>';
+}
+async function repeat(i){
+  toast('Збираю пак із чека…');
+  const p = await api('/api/pack/from_receipt','POST',{index:i});
+  if(bad(p)) return;
+  toast(`${p.name}: ${p.item_count} поз. на ${uah(p.total_uah)} ₴`);
+  location.href = '/';
+}
+
+function bar(w, max){
+  const pct = Math.min(100, Math.abs(w) / (max || 1) * 100);
+  const color = w < 0 ? 'var(--red)' : 'var(--green)';
+  return `<div class="bar" style="margin:4px 0 0"><i style="width:${pct}%;background:${color}"></i></div>`;
+}
+async function loadWeights(){
+  const d = await api('/api/weights');
+  if(bad(d)) return;
+  const maxC = Math.max(1, ...(d.categories||[]).map(c => Math.abs(c.weight)));
+  const maxP = Math.max(1, ...[...(d.loved||[]), ...(d.disliked||[])].map(p => Math.abs(p.weight)));
+  $('#weights').innerHTML = `
+    <p class="soft" style="margin:0 0 10px">Відстежується товарів: ${d.tracked_products}</p>
+    <h3>Категорії</h3>
+    ${(d.categories||[]).slice(0,8).map(c => `<div class="habit" style="border:0;padding:5px 0">
+      <div style="display:flex;justify-content:space-between;font-size:13px">
+        <span>${c.title}</span><b style="color:${c.weight<0?'var(--red)':'var(--green)'}">
+          ${c.weight > 0 ? '+' : ''}${c.weight}</b></div>${bar(c.weight, maxC)}</div>`).join('')
+      || '<span class="soft">Порожньо — натисни «Перерахувати з чеків».</span>'}
+    ${(d.loved||[]).length ? `<h3>Любить</h3><div class="chips">${
+      d.loved.slice(0,10).map(p => `<span class="tag">${p.name.slice(0,30)}
+        <b style="color:var(--green)">+${p.weight}</b></span>`).join('')}</div>` : ''}
+    ${(d.disliked||[]).length ? `<h3>Оминає</h3><div class="chips">${
+      d.disliked.slice(0,8).map(p => `<span class="tag stop">${p.name.slice(0,30)}
+        <b>${p.weight}</b></span>`).join('')}</div>` : ''}
+    <p class="soft" style="margin:10px 0 0">${d.note}</p>`;
+}
+async function rebuildWeights(){
+  toast('Перечитую чеки…');
+  const r = await api('/api/weights/rebuild','POST',{});
+  if(bad(r)) return;
+  toast(`Пораховано з ${r.built_from.receipts} чеків, ${r.built_from.lines} позицій`);
+  loadWeights();
+}
+
+async function loadConnectors(){
+  const d = await api('/api/connectors');
+  $('#connectors').innerHTML = (d.connectors||[]).map(c => `
+    <div class="conn"><div class="ic">${c.icon}</div>
+      <div class="t"><b>${c.name}</b><span>${c.kind} · ${c.gives}</span></div>
+      <label class="toggle" style="padding:0">
+        <input type="checkbox" ${c.connected?'checked':''} onchange="toggleConn('${c.id}',this.checked)">
+        <span class="track"></span></label></div>`).join('')
+    + `<p class="soft" style="margin:9px 0 0">${d.spec}</p>`;
+}
+async function toggleConn(id, on){
+  const r = await api('/api/connect','POST',{source:id, on});
+  toast(on ? 'Підключено — дані демонстраційні' : 'Відключено');
+  loadConnectors();
+}
+
+mountTop('profile');
+(async () => {
+  await Promise.all([loadStatus(), loadPortrait(), loadPrefs(), loadFamily(),
+                     loadConnectors(), loadWeights(), loadReceipts()]);
+})();
+</script>
+</body>
+</html>
