@@ -9,7 +9,9 @@ MCP-tools через MCPHost. Ті самі інструменти бачить 
 
 from __future__ import annotations
 
+import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 
 from starlette.applications import Starlette
@@ -17,8 +19,23 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Route
 
-from web import chat as chatmod
-from web.mcp_host import host
+# Логи виклику моделі («packagent.ai» у web/chat.py) — власний хендлер, щоб
+# INFO друкувався незалежно від конфіга uvicorn. LOG_LEVEL=DEBUG для детальніших.
+_ai_log = logging.getLogger("packagent")
+if not _ai_log.handlers:
+    try:  # Windows-консоль часто cp1251 — кирилиця в логах інакше ламається
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    _h = logging.StreamHandler(sys.stderr)
+    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s",
+                                      datefmt="%H:%M:%S"))
+    _ai_log.addHandler(_h)
+    _ai_log.setLevel(os.environ.get("LOG_LEVEL", "INFO").upper())
+    _ai_log.propagate = False
+
+from web import chat as chatmod  # noqa: E402  (після налаштування логера)
+from web.mcp_host import host  # noqa: E402
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 

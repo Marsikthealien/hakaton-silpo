@@ -11,10 +11,14 @@ MCPHost, а виклики моделі маршрутизуються наза�
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
+import time
 
 import httpx2
+
+log = logging.getLogger("packagent.ai")
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 MODEL = os.environ.get("OLLAMA_MODEL", "")  # порожньо = авто-вибір
@@ -69,6 +73,7 @@ async def _fallback(messages: list[dict], host) -> dict:
             args.setdefault("avoid", avoid)
         if profile.get("bonus_first"):
             args.setdefault("prefer_promo", True)
+    log.info("fallback: '%s' → правило %s %s", text[:60], intent["tool"], args)
     result = await host.call(intent["tool"], args)
     name = result.get("name") or intent["tool"]
     summary = (f"{name}: {result['item_count']} позицій на {result['total_uah']} ₴"
@@ -124,6 +129,8 @@ async def narrate(phrase: str, result: dict, tool: str | None = None) -> dict:
         result.get("item_count") is not None or result.get("items"))
     status = await chat_available()
     if not is_pack or not status["available"]:
+        why = "Ollama офлайн" if not status["available"] else "не пак"
+        log.info("narrate: %s → детермінований підсумок", why)
         prefix = "" if status["available"] else "Модель офлайн — зібрав напряму.\n"
         return {"reply": prefix + _summary_line(result), "narrated": True,
                 "offline": not status["available"]}
@@ -141,19 +148,28 @@ async def narrate(phrase: str, result: dict, tool: str | None = None) -> dict:
     ]
     if model.startswith("qwen3"):
         convo[-1]["content"] += " /no_think"
+    log.info("narrate >> POST %s/api/chat | model=%s tool=%s phrase=%r payload=%dc",
+             OLLAMA_URL, model, tool, phrase[:80], len(payload))
+    t0 = time.perf_counter()
     try:
         async with httpx2.AsyncClient(timeout=20) as client:
             response = await client.post(f"{OLLAMA_URL}/api/chat", json={
                 "model": model, "messages": convo, "stream": False,
                 "think": False, "keep_alive": "15m",
                 "options": {"temperature": 0.2, "num_predict": 140}})
+        ms = (time.perf_counter() - t0) * 1000
         if response.status_code != 200:
+            log.warning("narrate FAIL HTTP %s | %.0f ms | %s",
+                        response.status_code, ms, response.text[:160])
             return {"reply": _summary_line(result), "narrated": True,
                     "error": f"Ollama {response.status_code}"}
         reply = _strip_think(response.json().get("message", {}).get("content"))
+        log.info("narrate << %.0f ms | model=%s | reply=%r", ms, model, (reply or "")[:120])
         return {"reply": reply or _summary_line(result), "narrated": True,
                 "model": model}
     except Exception as exc:  # модель не відповіла — детермінований підсумок усе одно є
+        log.warning("narrate FAIL %.0f ms | %s: %s", (time.perf_counter() - t0) * 1000,
+                    exc.__class__.__name__, str(exc)[:160])
         return {"reply": _summary_line(result), "narrated": True,
                 "error": (str(exc)[:200] or exc.__class__.__name__)}
 
@@ -165,7 +181,8 @@ async def chat_available() -> dict:
             models = [m.get("name", "") for m in response.json().get("models", [])]
         return {"available": True, "model": _pick_model(models),
                 "has_model": bool(models), "models": models}
-    except Exception:
+    except Exception as exc:
+        log.warning("Ollama недоступна (%s): %s", OLLAMA_URL, exc.__class__.__name__)
         return {"available": False, "model": "qwen2.5:3b",
                 "hint": "Запусти Ollama та `ollama pull qwen2.5:3b`."}
 
@@ -174,6 +191,7 @@ async def chat(messages: list[dict], host, max_steps: int = 6) -> dict:
     """Tool-loop через Ollama; інструменти виконуються по MCP через host."""
     status = await chat_available()
     if not status["available"]:
+        log.info("chat: Ollama офлайн → fallback за правилами (%d повідомл.)", len(messages))
         return await _fallback(messages, host)
 
     model = status["model"]
@@ -182,21 +200,35 @@ async def chat(messages: list[dict], host, max_steps: int = 6) -> dict:
     if model.startswith("qwen3") and convo and convo[-1]["role"] == "user":
         convo[-1] = {**convo[-1], "content": convo[-1]["content"] + " /no_think"}
 
+    last_user = next((m.get("content", "") for m in reversed(messages)
+                      if m.get("role") == "user"), "")
+    log.info("chat >> model=%s | tools=%d | повідомл.=%d | '%s'",
+             model, len(tools), len(messages), last_user[:80])
+
     tools_used = []
     async with httpx2.AsyncClient(timeout=300) as client:
-        for _ in range(max_steps):
+        for step in range(1, max_steps + 1):
+            t0 = time.perf_counter()
             response = await client.post(f"{OLLAMA_URL}/api/chat", json={
                 "model": model, "messages": convo, "tools": tools,
                 "stream": False, "think": False, "keep_alive": "15m",
                 "options": {"temperature": 0.2, "num_predict": 512}})
+            ms = (time.perf_counter() - t0) * 1000
             if response.status_code != 200:
+                log.warning("chat FAIL крок %d | HTTP %s | %.0f ms | %s",
+                            step, response.status_code, ms, response.text[:160])
                 return {"reply": None, "tools_used": tools_used,
                         "error": f"Ollama {response.status_code}: {response.text[:200]}"}
             message = response.json().get("message", {})
             calls = message.get("tool_calls") or []
             if not calls:
+                log.info("chat << крок %d | %.0f ms | фінал %dc | всього tools=%s",
+                         step, ms, len(message.get("content") or ""),
+                         [t["name"] for t in tools_used])
                 return {"reply": _strip_think(message.get("content")),
                         "tools_used": tools_used}
+            log.info("chat << крок %d | %.0f ms | модель просить: %s",
+                     step, ms, [c["function"]["name"] for c in calls])
             convo.append({"role": "assistant", "content": message.get("content", ""),
                           "tool_calls": calls})
             for call in calls:
@@ -209,10 +241,18 @@ async def chat(messages: list[dict], host, max_steps: int = 6) -> dict:
                     avoid = (profile.get("allergies") or []) + (profile.get("dislikes") or [])
                     if avoid:
                         args["avoid"] = avoid
+                log.info("chat: MCP %s %s", name,
+                         json.dumps(args, ensure_ascii=False)[:200])
+                mt0 = time.perf_counter()
                 result = await host.call(name, args)
+                log.info("chat: MCP %s ← %.0f ms | %s", name,
+                         (time.perf_counter() - mt0) * 1000,
+                         "error" if isinstance(result, dict) and result.get("error")
+                         else "ok")
                 tools_used.append({"name": name, "args": args})
                 convo.append({"role": "tool", "tool_name": name,
                               "content": json.dumps(result, ensure_ascii=False)[:4000]})
+    log.warning("chat: перевищено ліміт кроків (%d)", max_steps)
     return {"reply": "(перевищено ліміт кроків)", "tools_used": tools_used}
 
 
