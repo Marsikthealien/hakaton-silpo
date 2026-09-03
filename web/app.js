@@ -329,6 +329,10 @@ function setMode(m) {
   MODE = m;
   document.querySelectorAll('[data-mode]').forEach(b =>
     b.setAttribute('aria-pressed', b.dataset.mode === m));
+  const note = document.querySelector('#mode-note');
+  if (note) note.textContent = m === 'llm'
+    ? 'Той самий MCP-виклик, що й «Напряму» — модель лише озвучує готовий результат у чаті. Пак однаковий.'
+    : 'Сценарій іде напряму через MCP, без моделі.';
 }
 
 function renderScenarios(into, second) {
@@ -389,23 +393,23 @@ async function runScenario(id, extraBody) {
   const before = (await api('/api/trace?limit=1')).total;
   const stop = await watchChain(id, before);
 
-  let result;
-  if (MODE === 'llm') {
-    const chat = await api('/api/chat', 'POST', { messages: [{ role: 'user', content: s.phrase }] });
-    if (chat.error) { toast(chat.error + ' — виконую напряму'); }
-    result = chat.error ? await callScenario(s, extraBody) : chat;
-    if (!chat.error && window.bubble) {
-      bubble('me', s.phrase);
-      if (chat.tools_used?.length) bubble('tools', '→ ' + chat.tools_used.map(t => t.name).join(' · '));
-      bubble('it', chat.reply || '—');
-    }
-    const packs = await api('/api/packs');
-    if (packs.packs?.length) result = await api('/api/pack?pack_id=' + packs.packs[0].id);
-  } else {
-    result = await callScenario(s, extraBody);
-  }
+  // «Напряму» і «Через модель» мусять давати РІВНО той самий результат: у
+  // обох режимах сценарій виконує той самий MCP-виклик (callScenario). У
+  // режимі моделі вона лише озвучує вже готовий результат людською мовою —
+  // інструментів їй не дають, тож підмінити пак вона не може.
+  const result = await callScenario(s, extraBody);
   stop();
   handleResult(s, result);
+  if (MODE === 'llm' && window.bubble) {
+    bubble('me', s.phrase);
+    bubble('it', '…');
+    const n = result && !result.error
+      ? await api('/api/chat/narrate', 'POST', {
+          phrase: s.phrase, tool: (s.tools[0] || '').replace('*', ''), result })
+      : null;
+    $('#log').lastChild.remove();
+    bubble('it', n ? (n.reply || '—') : 'Сценарій не виконався — дивись картку.');
+  }
 }
 
 async function callScenario(s, extraBody) {

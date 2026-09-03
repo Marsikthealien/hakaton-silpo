@@ -145,9 +145,7 @@ mountTop('home');
     `<button onclick="quick('${q}')">${q}</button>`).join('');
   bubble('it', 'Готовий. Питайте.');
   const s = await loadStatus();
-  $('#mode-note').textContent = s.model_available
-    ? `Модель ${s.model} на звʼязку — повний агентний цикл.`
-    : 'Модель офлайн: вільний текст розбираю правилами й усе одно виконую сценарій.';
+  setMode(MODE);
   $('#chat-note').textContent = s.model_available ? ''
     : 'Без моделі намір визначаю за ключовими словами.';
   await Promise.all([loadAllergies(), loadExpiring(), renderCart($('#cart-side'))]);

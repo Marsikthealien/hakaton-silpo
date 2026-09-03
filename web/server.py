@@ -171,6 +171,14 @@ async def chat_send(request: Request):
     return ok(await chatmod.chat(payload.get("messages", []), host))
 
 
+async def chat_narrate(request: Request):
+    """Підсумок уже виконаного сценарію моделлю. Результат не змінює."""
+    payload = await body(request)
+    return ok(await chatmod.narrate(payload.get("phrase", ""),
+                                    payload.get("result") or {},
+                                    payload.get("tool")))
+
+
 routes = [
     Route("/", page("index.html")),
     Route("/profile", page("profile.html")),
@@ -259,6 +267,7 @@ routes = [
     # --- чат ---
     Route("/api/chat/status", chat_status_route),
     Route("/api/chat", chat_send, methods=["POST"]),
+    Route("/api/chat/narrate", chat_narrate, methods=["POST"]),
 ]
 
 

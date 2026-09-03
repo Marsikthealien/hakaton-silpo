@@ -94,6 +94,70 @@ def _strip_think(text: str) -> str:
     return text.replace("<think>", "").replace("</think>", "").strip()
 
 
+def _summary_line(result: dict) -> str:
+    """Детермінований опис результату сценарію — коли моделі немає."""
+    if not isinstance(result, dict):
+        return "Готово — дивись картку праворуч."
+    name = result.get("name") or "Пак"
+    if result.get("item_count") is not None:
+        line = f"{name}: {result['item_count']} позицій на {result.get('total_uah', 0)} ₴"
+        if result.get("saved_uah"):
+            line += f", знижка {result['saved_uah']} ₴"
+        return line
+    if result.get("verdict"):
+        return result["verdict"]
+    return "Готово — дивись картку праворуч."
+
+
+async def narrate(phrase: str, result: dict, tool: str | None = None) -> dict:
+    """Озвучити вже виконаний сценарій.
+
+    Сам результат сценарій рахує напряму (той самий MCP-виклик, що й кнопка
+    «Напряму»), тож режим «Через модель» дає РІВНО той самий пак. Модель тут
+    лише формулює підсумок людською мовою — інструментів їй не даємо, отже
+    змінити чи підмінити результат вона не може.
+    """
+    # Модель озвучує лише пак: там є що переказати (склад, сума, знижка). Для
+    # verdict-екранів (вага, маршрут, доставка) вона тільки вигадує — беремо
+    # детермінований рядок, щоб чат не розходився з карткою.
+    is_pack = isinstance(result, dict) and (
+        result.get("item_count") is not None or result.get("items"))
+    status = await chat_available()
+    if not is_pack or not status["available"]:
+        prefix = "" if status["available"] else "Модель офлайн — зібрав напряму.\n"
+        return {"reply": prefix + _summary_line(result), "narrated": True,
+                "offline": not status["available"]}
+
+    model = status["model"]
+    payload = json.dumps(result, ensure_ascii=False)[:3000]
+    convo = [
+        {"role": "system", "content": SYSTEM},
+        {"role": "user", "content": phrase},
+        {"role": "assistant", "content":
+            f"Виконав {tool or 'сценарій'}. Результат: {payload}"},
+        {"role": "user", "content":
+            "Скажи одним-двома реченнями українською, що зібрано, на яку суму "
+            "і скільки зекономлено. Нічого не вигадуй понад цей результат."},
+    ]
+    if model.startswith("qwen3"):
+        convo[-1]["content"] += " /no_think"
+    try:
+        async with httpx2.AsyncClient(timeout=45) as client:
+            response = await client.post(f"{OLLAMA_URL}/api/chat", json={
+                "model": model, "messages": convo, "stream": False,
+                "think": False, "keep_alive": "15m",
+                "options": {"temperature": 0.2, "num_predict": 140}})
+        if response.status_code != 200:
+            return {"reply": _summary_line(result), "narrated": True,
+                    "error": f"Ollama {response.status_code}"}
+        reply = _strip_think(response.json().get("message", {}).get("content"))
+        return {"reply": reply or _summary_line(result), "narrated": True,
+                "model": model}
+    except Exception as exc:  # модель не відповіла — детермінований підсумок усе одно є
+        return {"reply": _summary_line(result), "narrated": True,
+                "error": (str(exc)[:200] or exc.__class__.__name__)}
+
+
 async def chat_available() -> dict:
     try:
         async with httpx2.AsyncClient(timeout=3) as client:
