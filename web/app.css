@@ -11,8 +11,10 @@ body{margin:0; background:var(--bg); color:var(--ink); font-size:14.5px; line-he
 .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
 a{color:var(--blue)}
 
-/* верхня панель */
-.top{position:sticky; top:0; z-index:20; background:rgba(238,241,248,.92);
+/* верхня панель — тільки прямий нащадок body; .scn .top (шапка картки
+   сценарію) має той самий клас, і без цього уточнення теж ставав липким
+   і проходив крізь меню */
+body > .top{position:sticky; top:0; z-index:20; background:rgba(238,241,248,.92);
   backdrop-filter:blur(8px); border-bottom:1px solid var(--line)}
 .top .in{max-width:1320px; margin:0 auto; padding:11px 20px; display:flex; align-items:center; gap:18px}
 .brand{display:flex; align-items:center; gap:9px; text-decoration:none; color:inherit}
