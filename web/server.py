@@ -185,7 +185,9 @@ async def chat_status_route(request: Request):
 
 async def chat_send(request: Request):
     payload = await body(request)
-    return ok(await chatmod.chat(payload.get("messages", []), host))
+    out = await chatmod.chat(payload.get("messages", []), host)
+    code = 502 if out.get("error") and not out.get("reply") else 200
+    return JSONResponse(out, status_code=code)
 
 
 async def chat_narrate(request: Request):
@@ -250,6 +252,7 @@ routes = [
     Route("/api/route", tool_route("silpo_get_store_layout"), methods=["POST"]),
     Route("/api/route/save", tool_route("silpo_save_store_layout"), methods=["POST"]),
     Route("/api/weight", tool_route("cart_weight_check")),
+    Route("/api/order/risk", tool_route("order_risk"), methods=["GET", "POST"]),
     Route("/api/family/recipes", tool_route("silpo_get_family_recipes")),
     Route("/api/family/recipe", tool_route("silpo_add_family_recipe"), methods=["POST"]),
     Route("/api/swipe", tool_route("silpo_record_swipe"), methods=["POST"]),

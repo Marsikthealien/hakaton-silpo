@@ -119,10 +119,19 @@ async function send(){
   const text = $('#ask').value.trim(); if(!text) return;
   $('#ask').value=''; bubble('me', text); CHAT.push({role:'user', content:text});
   bubble('it','…');
-  const r = await api('/api/chat','POST',{messages:CHAT});
-  $('#log').lastChild.remove();
+  const pending = $('#log').lastChild;
+  let r;
+  try { r = await api('/api/chat','POST',{messages:CHAT}); }
+  catch(e){ r = { error: 'ШІ недоступний: ' + (e && e.message || e) }; }
+  pending.remove();
+  if(r.error && !r.reply){
+    bubble('it', '⚠ ' + r.error);
+    $('#log').lastChild.className = 'msg err';
+    toast(r.error);
+    return;
+  }
   if(r.tools_used?.length) bubble('tools','→ '+r.tools_used.map(t=>t.name).join(' · '));
-  bubble('it', r.reply || r.error || '—');
+  bubble('it', r.reply || '—');
   if(r.reply) CHAT.push({role:'assistant', content:r.reply});
   if(r.result?.items) renderPack(r.result);
   else { const d = await api('/api/packs'); if(d.packs?.length) openPack(d.packs[0].id); }

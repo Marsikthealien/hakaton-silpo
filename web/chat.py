@@ -25,6 +25,9 @@ MODEL = os.environ.get("OLLAMA_MODEL", "")  # порожньо = авто-виб
 # Скільки чекати на озвучення сценарію. Довше — бульбашка «…» висить довше,
 # але частіше доходить до реального тексту ШІ; коротше — швидше кидає помилку.
 NARRATE_TIMEOUT = float(os.environ.get("NARRATE_TIMEOUT", "60"))
+# Ліміт на один крок tool-loop у вільному чаті. Було 300 с — це «вічне …»
+# при 6 кроках. Перевищив — крок кидає помилку, а не висить.
+CHAT_TIMEOUT = float(os.environ.get("CHAT_TIMEOUT", "120"))
 
 _PREFERRED = ["qwen2.5:7b", "qwen2.5:3b", "qwen2.5:3b-instruct",
               "llama3.2:3b", "qwen2.5", "qwen3:4b", "qwen3:1.7b", "qwen3"]
@@ -206,13 +209,21 @@ async def chat(messages: list[dict], host, max_steps: int = 6) -> dict:
              model, len(tools), len(messages), last_user[:80])
 
     tools_used = []
-    async with httpx2.AsyncClient(timeout=300) as client:
+    async with httpx2.AsyncClient(timeout=CHAT_TIMEOUT) as client:
         for step in range(1, max_steps + 1):
             t0 = time.perf_counter()
-            response = await client.post(f"{OLLAMA_URL}/api/chat", json={
-                "model": model, "messages": convo, "tools": tools,
-                "stream": False, "think": False, "keep_alive": "15m",
-                "options": {"temperature": 0.2, "num_predict": 512}})
+            try:
+                response = await client.post(f"{OLLAMA_URL}/api/chat", json={
+                    "model": model, "messages": convo, "tools": tools,
+                    "stream": False, "think": False, "keep_alive": "15m",
+                    "options": {"temperature": 0.2, "num_predict": 512}})
+            except Exception as exc:
+                log.warning("chat FAIL крок %d | %.0f ms | %s: %s", step,
+                            (time.perf_counter() - t0) * 1000,
+                            exc.__class__.__name__, str(exc)[:160])
+                return {"reply": None, "tools_used": tools_used,
+                        "error": f"ШІ не відповів за {CHAT_TIMEOUT:.0f} с "
+                                 f"({exc.__class__.__name__})"}
             ms = (time.perf_counter() - t0) * 1000
             if response.status_code != 200:
                 log.warning("chat FAIL крок %d | HTTP %s | %.0f ms | %s",
