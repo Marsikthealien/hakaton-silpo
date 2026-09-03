@@ -142,7 +142,7 @@ async def narrate(phrase: str, result: dict, tool: str | None = None) -> dict:
     if model.startswith("qwen3"):
         convo[-1]["content"] += " /no_think"
     try:
-        async with httpx2.AsyncClient(timeout=45) as client:
+        async with httpx2.AsyncClient(timeout=20) as client:
             response = await client.post(f"{OLLAMA_URL}/api/chat", json={
                 "model": model, "messages": convo, "stream": False,
                 "think": False, "keep_alive": "15m",

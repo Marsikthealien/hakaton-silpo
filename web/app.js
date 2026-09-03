@@ -394,22 +394,36 @@ async function runScenario(id, extraBody) {
   const stop = await watchChain(id, before);
 
   // «Напряму» і «Через модель» мусять давати РІВНО той самий результат: у
-  // обох режимах сценарій виконує той самий MCP-виклик (callScenario). У
-  // режимі моделі вона лише озвучує вже готовий результат людською мовою —
-  // інструментів їй не дають, тож підмінити пак вона не може.
+  // обох режимах сценарій виконує той самий MCP-виклик (callScenario). Пак,
+  // який бачить гість, малюється одразу — модель лише озвучує його в чаті і
+  // на сам результат не впливає (інструментів їй у цьому режимі не дають).
   const result = await callScenario(s, extraBody);
   stop();
   handleResult(s, result);
   if (MODE === 'llm' && window.bubble) {
     bubble('me', s.phrase);
-    bubble('it', '…');
-    const n = result && !result.error
-      ? await api('/api/chat/narrate', 'POST', {
-          phrase: s.phrase, tool: (s.tools[0] || '').replace('*', ''), result })
-      : null;
-    $('#log').lastChild.remove();
-    bubble('it', n ? (n.reply || '—') : 'Сценарій не виконався — дивись картку.');
+    bubble('it', scenarioSummary(s, result));   // миттєвий підсумок = те, що на картці
+    const line = $('#log').lastChild;
+    if (result && !result.error) {
+      // модель уточнює формулювання, коли встигне; результат уже на екрані
+      api('/api/chat/narrate', 'POST', {
+        phrase: s.phrase, tool: (s.tools[0] || '').replace('*', ''), result,
+      }).then(n => { if (n && n.reply && line) line.textContent = n.reply; })
+        .catch(() => {});
+    }
   }
+}
+
+/* Підсумок сценарію тими самими числами, що й на картці — щоб чат не
+   розходився з результатом, навіть поки модель думає або якщо вона офлайн. */
+function scenarioSummary(s, r) {
+  if (!r || r.error) return 'Сценарій не виконався — дивись повідомлення.';
+  if (r.item_count != null) {
+    let t = `${r.name || s.title}: ${r.item_count} позицій на ${uah(r.total_uah)} ₴`;
+    if (r.saved_uah > 0) t += `, знижка ${uah(r.saved_uah)} ₴`;
+    return t;
+  }
+  return r.verdict || 'Готово — дивись картку праворуч.';
 }
 
 async function callScenario(s, extraBody) {
