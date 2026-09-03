@@ -306,6 +306,12 @@ const SCENARIOS = [
     tools: ['silpo_get_shopping_cart_by_id', 'silpo_get_available_delivery_types',
             'silpo_get_time_slots'] },
 
+  { id: 'risk', title: 'Кур’єр не подзвонить',
+    phrase: 'Що в моєму замовленні можуть не зібрати?',
+    path: '/api/order/risk',
+    tools: ['silpo_get_my_online_orders', 'silpo_get_replacements',
+            'silpo_get_my_food_restrictions'] },
+
   { id: 'route', title: 'Маршрут по залу', needsPack: true,
     phrase: 'Скажи, в якому порядку обходити магазин',
     path: '/api/route',
@@ -388,6 +394,8 @@ async function runScenario(id, extraBody) {
   if (s.needsPack && !PACK) return toast('Спершу збери пак — маршрут будується під нього');
   if (s.id === 'route' && !extraBody)
     extraBody = { items: PACK.items.map(i => ({ name: i.name })), branch_id: PACK.branch || null };
+  if (s.id === 'risk' && !extraBody)
+    extraBody = { ...(PACK ? { pack_id: PACK.id } : {}), avoid: ALLERGIES };
 
   $('#scn-' + id).querySelectorAll('.tchip').forEach(c => c.classList.remove('on'));
   const before = (await api('/api/trace?limit=1')).total;
@@ -442,7 +450,40 @@ function handleResult(s, r) {
   if (s.id === 'weight') return renderWeight(r);
   if (s.id === 'route') return renderRoute(r);
   if (s.id === 'heirloom') return renderHeirloom(r);
+  if (s.id === 'risk') return renderOrderRisk(r);
   toast('Готово');
+}
+
+/* Ризик збирання: що можуть не зібрати й чим замінити наперед.
+   Джерело — silpo_get_replacements (не просто stock:0), заміни з алергією відкинуто. */
+function renderOrderRisk(r) {
+  const src = { pack: 'поточний пак', online_order: 'замовлення в збиранні',
+                cart: 'кошик «Сільпо»' }[r.source] || r.source;
+  const rows = (r.at_risk || []).map(x => {
+    const rep = x.replacement;
+    const delta = rep && rep.delta_uah != null
+      ? `<span class="${rep.delta_uah < 0 ? 'down' : 'up'}">${rep.delta_uah > 0 ? '+' : ''}${uah(rep.delta_uah)} ₴</span>` : '';
+    return `<tr>
+      <td>${x.name}${x.price_uah != null ? `<br><span class="soft">${uah(x.price_uah)} ₴</span>` : ''}
+        <br><span class="soft">${x.reason}</span></td>
+      <td>${rep
+        ? `${rep.name}<br><span class="soft">${rep.price_uah != null ? uah(rep.price_uah) + ' ₴' : ''} ${delta}${
+            rep.via === 'similar_products' ? ' · зі схожих' : ''}</span>`
+        : `<span style="color:var(--red)">заміну треба обрати вручну${
+            x.all_candidates_blocked ? ` — усі кандидати під обмеженням (${x.all_candidates_blocked.join(', ')})` : ''}</span>`}</td>
+    </tr>`;
+  }).join('');
+  $('#pack').innerHTML = `
+    <h2>Кур'єр не подзвонить</h2>
+    <p class="soft" style="margin:0 0 12px">Джерело: ${src} · перевірено ${r.checked} позиц.${
+      (r.checked_for || []).length ? ` · з поправкою на: ${r.checked_for.slice(0, 4).join(', ')}${r.checked_for.length > 4 ? '…' : ''}` : ''}</p>
+    <div class="warnbar${r.clean ? '' : ' bad'}">${r.verdict}</div>
+    ${rows ? `<div class="wrap-x" style="margin-top:12px"><table style="width:100%;font-size:13.5px">
+      <thead><tr><th>Позиція під ризиком</th><th>Заміна наперед</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>` : ''}
+    ${(r.blocked_by_allergy || []).length ? `<p class="soft" style="color:var(--red);margin-top:10px">
+      Під алергією, безпечної заміни немає: ${r.blocked_by_allergy.join(', ')}</p>` : ''}
+    <div class="note" style="margin-top:12px">${r.note || ''}</div>`;
 }
 
 /* ===================== діалоги сценаріїв ===================== */

@@ -1300,6 +1300,164 @@ async def cart_weight_check() -> dict:
             "note": "maxWeight беремо з доступних слотів обраного магазину."}
 
 
+async def order_risk(pack_id: str | None = None, avoid: list[str] | None = None) -> dict:
+    """Ризик збирання: що з набору можуть не зібрати — і чим замінити наперед.
+
+    `silpo_get_replacements` віддає позиції, які комплектувальник ризикує не
+    зібрати (це НЕ просто stock:0), і кандидатів на заміну від самого «Сільпо».
+    Зараз про заміну гість дізнається дзвінком кур'єра вже після оплати — тут
+    рішення переноситься наперед, а кандидати, що порушують алергію, відпадають.
+
+    Джерело позицій: пак (`pack_id`), інакше активне онлайн-замовлення в
+    збиранні, інакше поточний кошик.
+    """
+    ctx = await context.ensure()
+
+    terms = list(expand_avoid(avoid))
+    try:
+        diets = await silpo.call("silpo_get_my_food_restrictions", {})
+        for restriction in diets.get("restrictions", []):
+            slug = restriction.get("slug") or ""
+            if slug and slug != "all-food":
+                terms += expand_avoid([slug.replace("-free", "").replace("-", " ")])
+    except SilpoError:
+        pass
+    terms = sorted(set(t for t in terms if t))
+
+    # --- звідки беремо позиції ------------------------------------------------
+    source, lines = "cart", []
+    branch_id, company_id = ctx["branchId"], ctx.get("companyId")
+
+    if pack_id:
+        pack = packs.get(pack_id)
+        if not pack:
+            raise SilpoError(f"Пак {pack_id} не знайдено.")
+        source = "pack"
+        for item in pack["items"]:
+            if not item.get("product_id"):
+                continue
+            lines.append({"product_id": str(item["product_id"]), "name": item.get("name"),
+                          "slug": item.get("slug"), "price_uah": item.get("price"),
+                          "qty": item.get("qty") or 1})
+        first = pack["items"][0] if pack["items"] else {}
+        branch_id = first.get("branch_id") or branch_id
+        company_id = first.get("company_id") or company_id
+    else:
+        order = None
+        try:
+            data = await silpo.call("silpo_get_my_online_orders", {"limit": 5})
+            for candidate in data.get("orders", []):
+                state = (candidate.get("status") or candidate.get("state") or "").lower()
+                if state and not any(k in state for k in
+                                     ("deliver", "done", "complete", "cancel", "closed", "issued")):
+                    order = candidate
+                    break
+        except SilpoError:
+            pass
+        if order:
+            source = "online_order"
+            for product in order.get("products", []):
+                catalog = product.get("catalogProduct") or product
+                lines.append({"product_id": str(product.get("productId") or catalog.get("id")),
+                              "name": product.get("name") or catalog.get("name"),
+                              "slug": catalog.get("slug"),
+                              "price_uah": product.get("price") or catalog.get("price"),
+                              "qty": float(product.get("quantity") or 1)})
+            branch_id = order.get("branchId") or branch_id
+            company_id = order.get("companyId") or company_id
+        else:
+            detail = await silpo.call("silpo_get_shopping_cart_by_id",
+                                      {"shoppingCartId": ctx["shoppingCartId"]})
+            cart = detail.get("cart") or detail
+            shipment = (cart.get("shipments") or [{}])[0]
+            branch_id = shipment.get("branchId") or branch_id
+            company_id = shipment.get("companyId") or company_id
+            for product in shipment.get("products") or []:
+                lines.append({"product_id": str(product.get("productId")),
+                              "name": product.get("name"), "slug": product.get("slug"),
+                              "price_uah": product.get("price"),
+                              "qty": product.get("quantity") or 1})
+
+    if not lines:
+        return {"source": source, "checked": 0, "checked_for": terms,
+                "at_risk": [], "safe_swaps": [], "blocked_by_allergy": [], "clean": True,
+                "verdict": "Нема що перевіряти — ні пака, ні кошика, ні замовлення в збиранні."}
+
+    by_id = {line["product_id"]: line for line in lines}
+
+    reply = await silpo.call("silpo_get_replacements", {
+        "branchId": branch_id, "companyId": company_id,
+        "deliveryType": ctx["deliveryType"], "productIds": list(by_id)})
+    flagged = reply.get("items") or reply.get("replacements") or reply.get("results") or []
+
+    at_risk, safe_swaps, blocked = [], [], []
+    for entry in flagged:
+        pid = str(entry.get("productId") or entry.get("id")
+                  or (entry.get("product") or {}).get("id") or "")
+        origin = by_id.get(pid) or {
+            "name": entry.get("name") or (entry.get("product") or {}).get("name"),
+            "price_uah": None, "slug": (entry.get("product") or {}).get("slug")}
+        raw = (entry.get("replacements") or entry.get("candidates")
+               or entry.get("items") or entry.get("options") or [])
+        candidates = []
+        for cand in raw:
+            body = cand.get("product") if isinstance(cand.get("product"), dict) else cand
+            name = body.get("name") or cand.get("name")
+            if not name:
+                continue
+            candidates.append({
+                "product_id": body.get("id") or cand.get("productId"),
+                "name": name, "slug": body.get("slug"),
+                "price_uah": body.get("price") if body.get("price") is not None else cand.get("price"),
+                "image": body.get("image"),
+                "blocked_by": _blocked_by(name, terms)})
+
+        was = origin.get("price_uah")
+        row = {"product_id": pid, "name": origin.get("name"), "price_uah": was,
+               "reason": entry.get("reason") or entry.get("risk")
+               or "комплектувальник може не зібрати"}
+        safe = [c for c in candidates if not c["blocked_by"]]
+        if not safe and not candidates:
+            # tool не дав кандидатів — пробуємо схожі товари як запасний шлях
+            similar = [p for p in await _similar(origin.get("slug") or "")
+                       if not _blocked_by(p.get("name", ""), terms)]
+            similar.sort(key=lambda p: p.get("price") or 1e9)
+            if similar:
+                pick = similar[0]
+                safe = [{"product_id": pick.get("id"), "name": pick.get("name"),
+                         "slug": pick.get("slug"), "price_uah": pick.get("price"),
+                         "image": pick.get("image"), "blocked_by": None, "via": "similar_products"}]
+
+        if safe:
+            safe.sort(key=lambda c: (c["price_uah"] is None, c["price_uah"] or 0))
+            best = safe[0]
+            best["delta_uah"] = (round((best["price_uah"] or 0) - (was or 0), 2)
+                                 if was is not None and best["price_uah"] is not None else None)
+            row["replacement"] = best
+            safe_swaps.append({"from": origin.get("name"), "to": best["name"]})
+        else:
+            row["replacement"] = None
+            if candidates:
+                row["all_candidates_blocked"] = sorted(
+                    {c["blocked_by"] for c in candidates if c["blocked_by"]})
+                blocked.append(origin.get("name"))
+        at_risk.append(row)
+
+    clean = not at_risk
+    if clean:
+        verdict = f"Усі {len(lines)} позицій зберуть — ризику заміни не виявлено."
+    else:
+        manual = [r["name"] for r in at_risk if not r.get("replacement")]
+        verdict = (f"{len(at_risk)} позиц. під ризиком; для {len(safe_swaps)} обрано "
+                   f"безпечну заміну" + (f", {len(manual)} — вирішити вручну" if manual else "")
+                   + ".")
+    return {"source": source, "checked": len(lines), "checked_for": terms,
+            "at_risk": at_risk, "safe_swaps": safe_swaps,
+            "blocked_by_allergy": blocked, "clean": clean, "verdict": verdict,
+            "note": ("Ризик — з silpo_get_replacements (не просто stock:0). Заміни, що "
+                     "порушують алергію чи дієту, відкинуто за назвою товару.")}
+
+
 async def set_cart_quantity(product_id: str, quantity: float) -> dict:
     """Змінити кількість позиції у справжньому кошику."""
     ctx = await context.ensure()
