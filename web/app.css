@@ -312,6 +312,7 @@ body.mobile .appframe{border:10px solid #1B2233;border-radius:34px;
 .msg.bot{background:var(--card);border:1px solid var(--line);border-bottom-left-radius:6px}
 .msg.you{background:#FCEFE3;margin-left:auto;border-bottom-right-radius:6px}
 .msg.sys{background:none;border:0;color:var(--soft);font-size:11.5px;padding:0 4px;max-width:100%}
+.msg.err{background:#FEECEC;border:1px solid #F5C2C2;color:#B42318;border-bottom-left-radius:6px}
 .quicks{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 12px}
 .quicks button{display:flex;align-items:center;gap:7px;background:var(--card);
   border:1px solid var(--line);border-radius:999px;padding:8px 13px;

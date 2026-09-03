@@ -393,37 +393,38 @@ async function runScenario(id, extraBody) {
   const before = (await api('/api/trace?limit=1')).total;
   const stop = await watchChain(id, before);
 
-  // «Напряму» і «Через модель» мусять давати РІВНО той самий результат: у
-  // обох режимах сценарій виконує той самий MCP-виклик (callScenario). Пак,
-  // який бачить гість, малюється одразу — модель лише озвучує його в чаті і
-  // на сам результат не впливає (інструментів їй у цьому режимі не дають).
+  // «Напряму» і «Через модель» дають РІВНО той самий пак: обидва режими
+  // виконують той самий MCP-виклик (callScenario), картка малюється одразу.
+  // У режимі моделі бульбашка «…» означає РЕАЛЬНИЙ виклик ШІ: якщо модель
+  // відповіла — показуємо її текст, якщо ні (офлайн/таймаут) — кидаємо
+  // помилку в чат і тост, а не тихий детермінований підсумок.
   const result = await callScenario(s, extraBody);
   stop();
   handleResult(s, result);
   if (MODE === 'llm' && window.bubble) {
     bubble('me', s.phrase);
-    bubble('it', scenarioSummary(s, result));   // миттєвий підсумок = те, що на картці
+    if (!result || result.error) {
+      bubble('it', '⚠ Сценарій не виконався — дивись повідомлення про помилку.');
+      return;
+    }
+    bubble('it', '…');
     const line = $('#log').lastChild;
-    if (result && !result.error) {
-      // модель уточнює формулювання, коли встигне; результат уже на екрані
-      api('/api/chat/narrate', 'POST', {
-        phrase: s.phrase, tool: (s.tools[0] || '').replace('*', ''), result,
-      }).then(n => { if (n && n.reply && line) line.textContent = n.reply; })
-        .catch(() => {});
+    let n;
+    try {
+      n = await api('/api/chat/narrate', 'POST',
+        { phrase: s.phrase, tool: (s.tools[0] || '').replace('*', ''), result });
+    } catch (e) {
+      n = { error: String(e && e.message || e) };
+    }
+    if (n && n.reply && n.model) {
+      line.textContent = n.reply;                 // ШІ справді озвучив
+    } else {
+      const msg = (n && n.error) || 'ШІ не відповів';
+      line.className = 'msg err';
+      line.textContent = '⚠ ' + msg;
+      toast(msg);
     }
   }
-}
-
-/* Підсумок сценарію тими самими числами, що й на картці — щоб чат не
-   розходився з результатом, навіть поки модель думає або якщо вона офлайн. */
-function scenarioSummary(s, r) {
-  if (!r || r.error) return 'Сценарій не виконався — дивись повідомлення.';
-  if (r.item_count != null) {
-    let t = `${r.name || s.title}: ${r.item_count} позицій на ${uah(r.total_uah)} ₴`;
-    if (r.saved_uah > 0) t += `, знижка ${uah(r.saved_uah)} ₴`;
-    return t;
-  }
-  return r.verdict || 'Готово — дивись картку праворуч.';
 }
 
 async function callScenario(s, extraBody) {

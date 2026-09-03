@@ -189,11 +189,12 @@ async def chat_send(request: Request):
 
 
 async def chat_narrate(request: Request):
-    """Підсумок уже виконаного сценарію моделлю. Результат не змінює."""
+    """Озвучення сценарію моделлю. Модель не викликалась / не відповіла → 502."""
     payload = await body(request)
-    return ok(await chatmod.narrate(payload.get("phrase", ""),
-                                    payload.get("result") or {},
-                                    payload.get("tool")))
+    out = await chatmod.narrate(payload.get("phrase", ""),
+                                payload.get("result") or {},
+                                payload.get("tool"))
+    return JSONResponse(out, status_code=502 if out.get("error") else 200)
 
 
 routes = [

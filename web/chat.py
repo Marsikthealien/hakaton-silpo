@@ -22,6 +22,9 @@ log = logging.getLogger("packagent.ai")
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 MODEL = os.environ.get("OLLAMA_MODEL", "")  # порожньо = авто-вибір
+# Скільки чекати на озвучення сценарію. Довше — бульбашка «…» висить довше,
+# але частіше доходить до реального тексту ШІ; коротше — швидше кидає помилку.
+NARRATE_TIMEOUT = float(os.environ.get("NARRATE_TIMEOUT", "60"))
 
 _PREFERRED = ["qwen2.5:7b", "qwen2.5:3b", "qwen2.5:3b-instruct",
               "llama3.2:3b", "qwen2.5", "qwen3:4b", "qwen3:1.7b", "qwen3"]
@@ -99,52 +102,48 @@ def _strip_think(text: str) -> str:
     return text.replace("<think>", "").replace("</think>", "").strip()
 
 
-def _summary_line(result: dict) -> str:
-    """Детермінований опис результату сценарію — коли моделі немає."""
+def _digest(result: dict) -> str:
+    """Стислий зліпок результату для промпта: моделі треба числа, а не 3 КБ
+    slug'ів, картинок і branch_id — інакше повільна локалка не встигає навіть
+    прочитати вхід. Перелік товарів для переказу теж зайвий."""
     if not isinstance(result, dict):
-        return "Готово — дивись картку праворуч."
-    name = result.get("name") or "Пак"
-    if result.get("item_count") is not None:
-        line = f"{name}: {result['item_count']} позицій на {result.get('total_uah', 0)} ₴"
-        if result.get("saved_uah"):
-            line += f", знижка {result['saved_uah']} ₴"
-        return line
-    if result.get("verdict"):
-        return result["verdict"]
-    return "Готово — дивись картку праворуч."
+        return json.dumps(result, ensure_ascii=False)[:400]
+    keep = {k: result[k] for k in
+            ("name", "item_count", "total_uah", "saved_uah", "source", "verdict")
+            if result.get(k) is not None}
+    first = [i.get("name") for i in (result.get("items") or [])[:4] if i.get("name")]
+    if first:
+        keep["перші_товари"] = first
+    return json.dumps(keep, ensure_ascii=False)
 
 
 async def narrate(phrase: str, result: dict, tool: str | None = None) -> dict:
-    """Озвучити вже виконаний сценарій.
+    """Озвучити вже виконаний сценарій РЕАЛЬНИМ викликом моделі.
 
     Сам результат сценарій рахує напряму (той самий MCP-виклик, що й кнопка
     «Напряму»), тож режим «Через модель» дає РІВНО той самий пак. Модель тут
-    лише формулює підсумок людською мовою — інструментів їй не даємо, отже
-    змінити чи підмінити результат вона не може.
+    лише формулює підсумок людською мовою — інструментів їй не даємо.
+
+    Підсумок віддаємо ТІЛЬКИ якщо модель справді відповіла. Немає Ollama,
+    таймаут, HTTP-помилка, порожня відповідь → {"error": ...}, а не тихий
+    детермінований рядок: у режимі «Через модель» бульбашка «…» означає, що
+    ШІ викликано, тож брехати їй нема сенсу.
     """
-    # Модель озвучує лише пак: там є що переказати (склад, сума, знижка). Для
-    # verdict-екранів (вага, маршрут, доставка) вона тільки вигадує — беремо
-    # детермінований рядок, щоб чат не розходився з карткою.
-    is_pack = isinstance(result, dict) and (
-        result.get("item_count") is not None or result.get("items"))
     status = await chat_available()
-    if not is_pack or not status["available"]:
-        why = "Ollama офлайн" if not status["available"] else "не пак"
-        log.info("narrate: %s → детермінований підсумок", why)
-        prefix = "" if status["available"] else "Модель офлайн — зібрав напряму.\n"
-        return {"reply": prefix + _summary_line(result), "narrated": True,
-                "offline": not status["available"]}
+    if not status["available"]:
+        msg = status.get("hint", "Ollama недоступна")
+        log.warning("narrate FAIL | Ollama офлайн (%s)", OLLAMA_URL)
+        return {"error": f"ШІ недоступний: {msg}", "offline": True}
 
     model = status["model"]
-    payload = json.dumps(result, ensure_ascii=False)[:3000]
+    payload = _digest(result)
     convo = [
-        {"role": "system", "content": SYSTEM},
-        {"role": "user", "content": phrase},
-        {"role": "assistant", "content":
-            f"Виконав {tool or 'сценарій'}. Результат: {payload}"},
         {"role": "user", "content":
-            "Скажи одним-двома реченнями українською, що зібрано, на яку суму "
-            "і скільки зекономлено. Нічого не вигадуй понад цей результат."},
+            f"Сценарій «Сільпо» ({tool or 'пак'}) на фразу «{phrase}» дав "
+            f"результат: {payload}\n\n"
+            "Перекажи це одним-двома короткими реченнями українською: що "
+            "зібрано, скільки позицій, на яку суму, скільки зекономлено. "
+            "Тільки з цих даних, нічого не додавай."},
     ]
     if model.startswith("qwen3"):
         convo[-1]["content"] += " /no_think"
@@ -152,26 +151,27 @@ async def narrate(phrase: str, result: dict, tool: str | None = None) -> dict:
              OLLAMA_URL, model, tool, phrase[:80], len(payload))
     t0 = time.perf_counter()
     try:
-        async with httpx2.AsyncClient(timeout=20) as client:
+        async with httpx2.AsyncClient(timeout=NARRATE_TIMEOUT) as client:
             response = await client.post(f"{OLLAMA_URL}/api/chat", json={
                 "model": model, "messages": convo, "stream": False,
                 "think": False, "keep_alive": "15m",
-                "options": {"temperature": 0.2, "num_predict": 140}})
-        ms = (time.perf_counter() - t0) * 1000
-        if response.status_code != 200:
-            log.warning("narrate FAIL HTTP %s | %.0f ms | %s",
-                        response.status_code, ms, response.text[:160])
-            return {"reply": _summary_line(result), "narrated": True,
-                    "error": f"Ollama {response.status_code}"}
-        reply = _strip_think(response.json().get("message", {}).get("content"))
-        log.info("narrate << %.0f ms | model=%s | reply=%r", ms, model, (reply or "")[:120])
-        return {"reply": reply or _summary_line(result), "narrated": True,
-                "model": model}
-    except Exception as exc:  # модель не відповіла — детермінований підсумок усе одно є
+                "options": {"temperature": 0.2, "num_predict": 80}})
+    except Exception as exc:
         log.warning("narrate FAIL %.0f ms | %s: %s", (time.perf_counter() - t0) * 1000,
                     exc.__class__.__name__, str(exc)[:160])
-        return {"reply": _summary_line(result), "narrated": True,
-                "error": (str(exc)[:200] or exc.__class__.__name__)}
+        return {"error": f"ШІ не відповів: {exc.__class__.__name__}", "model": model}
+
+    ms = (time.perf_counter() - t0) * 1000
+    if response.status_code != 200:
+        log.warning("narrate FAIL HTTP %s | %.0f ms | %s",
+                    response.status_code, ms, response.text[:160])
+        return {"error": f"ШІ помилка HTTP {response.status_code}", "model": model}
+    reply = _strip_think(response.json().get("message", {}).get("content"))
+    if not reply:
+        log.warning("narrate FAIL | %.0f ms | порожня відповідь", ms)
+        return {"error": "ШІ повернув порожню відповідь", "model": model}
+    log.info("narrate << %.0f ms | model=%s | reply=%r", ms, model, reply[:120])
+    return {"reply": reply, "narrated": True, "model": model}
 
 
 async def chat_available() -> dict:
