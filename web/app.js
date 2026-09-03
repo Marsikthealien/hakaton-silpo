@@ -415,6 +415,14 @@ async function runScenario(id, extraBody) {
       bubble('it', '⚠ Сценарій не виконався — дивись повідомлення про помилку.');
       return;
     }
+    // Модель озвучує лише пак: там є склад, сума, знижка. Вердикт-екрани
+    // (вага, ризик збирання, доставка) вона тільки вигадувала б («у кошику
+    // 0 грн») — показуємо готовий вердикт як є, без виклику ШІ й без «…».
+    const isPack = result.item_count != null || Array.isArray(result.items);
+    if (!isPack) {
+      bubble('it', result.verdict || 'Готово — дивись картку праворуч.');
+      return;
+    }
     bubble('it', '…');
     const line = $('#log').lastChild;
     let n;

@@ -132,6 +132,16 @@ async def narrate(phrase: str, result: dict, tool: str | None = None) -> dict:
     детермінований рядок: у режимі «Через модель» бульбашка «…» означає, що
     ШІ викликано, тож брехати їй нема сенсу.
     """
+    # Модель озвучує лише ПАК — там є склад, сума, знижка. Вердикт-екрани
+    # (вага, ризик збирання, доставка) не мають ні сум, ні позицій, і модель
+    # їх вигадує («у кошику 0 грн»). Для них віддаємо вердикт як є, без ШІ.
+    is_pack = isinstance(result, dict) and (
+        result.get("item_count") is not None or result.get("items"))
+    if not is_pack:
+        verdict = (result.get("verdict") if isinstance(result, dict) else None)
+        return {"reply": verdict or "Готово — дивись картку праворуч.",
+                "narrated": False, "model": None}
+
     status = await chat_available()
     if not status["available"]:
         msg = status.get("hint", "Ollama недоступна")
@@ -142,7 +152,7 @@ async def narrate(phrase: str, result: dict, tool: str | None = None) -> dict:
     payload = _digest(result)
     convo = [
         {"role": "user", "content":
-            f"Сценарій «Сільпо» ({tool or 'пак'}) на фразу «{phrase}» дав "
+            f"Пак «Сільпо» ({tool or 'пак'}) на фразу «{phrase}» дав "
             f"результат: {payload}\n\n"
             "Перекажи це одним-двома короткими реченнями українською: що "
             "зібрано, скільки позицій, на яку суму, скільки зекономлено. "
