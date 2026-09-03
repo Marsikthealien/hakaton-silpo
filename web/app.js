@@ -312,6 +312,12 @@ const SCENARIOS = [
     tools: ['silpo_get_my_online_orders', 'silpo_get_replacements',
             'silpo_get_my_food_restrictions'] },
 
+  { id: 'savings', title: 'Скільки я заощадив', method: 'GET',
+    phrase: 'Скільки Машрум мені заощадив і що згоріло?',
+    path: '/api/savings',
+    tools: ['silpo_get_my_offline_orders', 'silpo_get_my_coupons',
+            'silpo_get_my_promos', 'silpo_get_loyalty_info'] },
+
   { id: 'route', title: 'Маршрут по залу', needsPack: true,
     phrase: 'Скажи, в якому порядку обходити магазин',
     path: '/api/route',
@@ -459,7 +465,41 @@ function handleResult(s, r) {
   if (s.id === 'route') return renderRoute(r);
   if (s.id === 'heirloom') return renderHeirloom(r);
   if (s.id === 'risk') return renderOrderRisk(r);
+  if (s.id === 'savings') return renderSavings(r);
   toast('Готово');
+}
+
+/* Скільки заощаджено постфактум і що згорає: sumDiscount із чеків проти
+   активних купонів із минулою датою. Тут — метрика користі в гривнях. */
+function renderSavings(r) {
+  const list = (arr, cls) => (arr || []).map(c => `
+    <div class="habit ${cls || ''}">
+      <b>${c.reward || '—'}</b> ${c.text || ''}
+      <span class="soft">${c.days_left != null ? (c.days_left === 0 ? 'сьогодні' : `${c.days_left} дн.`) : ('до ' + (c.until || '').slice(0, 10))}${
+        c.cap_uah ? ` · до ${uah(c.cap_uah)} ₴` : ''}${c.min_cheque ? ` · ${c.min_cheque}` : ''}</span>
+    </div>`).join('');
+  const ap = r.applied_rewards || {};
+  const tile = (v, cap) => `<div style="flex:1;min-width:120px;background:var(--tint,#F4F6FB);
+    border:1px solid var(--line);border-radius:12px;padding:11px 14px">
+    <b style="display:block;font-size:20px;font-weight:800">${v}</b>
+    <span class="soft" style="font-size:12px">${cap}</span></div>`;
+  $('#pack').innerHTML = `
+    <h2>Скільки Машрум заощадив</h2>
+    <p class="soft" style="margin:0 0 12px">За ${r.receipts} останніх чеків · витрачено ${uah(r.spent_uah)} ₴</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      ${tile(uah(r.saved_uah) + ' ₴', 'знижок у чеках')}
+      ${tile(uah(ap.uah || 0) + ' ₴', (ap.count || 0) + ' нагород застосовано')}
+      ${tile(uah(r.bonuses_uah || 0) + ' ₴', 'балобонусів зараз')}
+    </div>
+    ${(r.coupons_wasted || []).length ? `<div class="warn">
+      <b>Згоріло невикористаними: ${r.coupons_wasted.length} купон(ів) на ~${uah(r.coupons_wasted_est_uah)} ₴</b>
+      ${list(r.coupons_wasted)}
+      <div class="soft" style="margin-top:6px">${r.note}</div>
+    </div>` : `<div class="warnbar">Протермінованих купонів немає — нічого не втрачено.</div>`}
+    ${(r.coupons_burning || []).length ? `<h3 style="margin-top:14px">Згорають за 2 дні</h3>${list(r.coupons_burning, 'swap')}` : ''}
+    ${(r.promos_burning || []).length ? `<h3 style="margin-top:14px">Промо, що згорають</h3>${list(r.promos_burning, 'swap')}` : ''}
+    ${(r.coupons_ready || []).length ? `<h3 style="margin-top:14px">Готові спрацювати (${r.coupons_ready.length})</h3>${list(r.coupons_ready)}` : ''}
+    <div class="note" style="margin-top:12px">Активацію купонів і промо підтверджуєш у застосунку — MCP їх лише читає.</div>`;
 }
 
 /* Ризик збирання: що можуть не зібрати й чим замінити наперед.

@@ -526,6 +526,82 @@ async def my_perks() -> dict:
     }
 
 
+async def savings_report(receipts: int = 10) -> dict:
+    """Скільки акції вже заощадили — і скільки згоріло невикористаним.
+
+    Єдиний спосіб виміряти користь у гривнях постфактум: `sumDiscount` із чеків
+    проти купонів, що протермінувалися активними. Список купонів не має прапорця
+    «використано», тож «згоріло» — оцінка згори за `rewardLimit`.
+    """
+    import datetime as _dt
+    today = _dt.date.today()
+    await context.ensure()
+
+    data = await silpo.call("silpo_get_my_offline_orders",
+                            {**context.search_ctx(), "limit": min(receipts, 10)})
+    orders = data.get("orders", [])
+    saved = round(sum(o.get("sumDiscount") or 0 for o in orders), 2)
+    spent = round(sum(o.get("sumReg") or 0 for o in orders), 2)
+    rewards = []
+    for order in orders:
+        for reward in order.get("rewards", []) or []:
+            rewards.append({
+                "text": (reward.get("applyText") or "").replace("\r", " ").split("\n")[0].strip(),
+                "uah": reward.get("applyRewardAmount"),
+                "promo_id": reward.get("promoId"),
+                "date": (order.get("createdAt") or "")[:10]})
+    rewards_uah = round(sum(r["uah"] or 0 for r in rewards), 2)
+
+    coupons = await silpo.call("silpo_get_my_coupons", {})
+    ready, burning, wasted = [], [], []
+    for c in coupons.get("coupons", []):
+        if not c.get("active"):
+            continue  # неактивний = використаний або відкликаний
+        try:
+            end = _dt.date.fromisoformat(str(c.get("endDate"))[:10])
+        except (TypeError, ValueError):
+            end = None
+        row = {"text": c.get("description"), "reward": c.get("rewardText"),
+               "until": c.get("endDate"), "cap_uah": c.get("rewardLimit"),
+               "min_cheque": c.get("warningText")}
+        if end and end < today:
+            wasted.append(row)
+        elif end and (end - today).days <= 2:
+            burning.append({**row, "days_left": (end - today).days})
+        else:
+            ready.append(row)
+    wasted_est = round(sum(r["cap_uah"] or 0 for r in wasted), 2)
+
+    promos = await silpo.call("silpo_get_my_promos", {})
+    promo_burning = []
+    for p in promos.get("promos", []):
+        try:
+            end = _dt.date.fromisoformat(str(p.get("endDate"))[:10])
+        except (TypeError, ValueError):
+            continue
+        if (end - today).days <= 2:
+            promo_burning.append({"text": p.get("description"), "reward": p.get("rewardText"),
+                                  "until": p.get("endDate"), "days_left": (end - today).days})
+
+    loyalty = await silpo.call("silpo_get_loyalty_info", {})
+    bonuses = ((loyalty.get("loyalty") or {}).get("balance") or {}).get("total")
+
+    verdict = (f"За {len(orders)} чеків заощаджено {saved} ₴"
+               + (f"; {len(wasted)} купон(ів) на ~{wasted_est} ₴ згоріли невикористаними"
+                  if wasted else "; протермінованих купонів немає")
+               + (f"; {len(burning)} згорають за 2 дні" if burning else "") + ".")
+    return {
+        "receipts": len(orders), "spent_uah": spent, "saved_uah": saved,
+        "applied_rewards": {"count": len(rewards), "uah": rewards_uah, "items": rewards[:8]},
+        "coupons_ready": ready, "coupons_burning": burning,
+        "coupons_wasted": wasted, "coupons_wasted_est_uah": wasted_est,
+        "promos_burning": promo_burning, "bonuses_uah": bonuses,
+        "verdict": verdict,
+        "note": ("«Згоріло» — активні купони з минулою датою: у списку немає прапорця "
+                 "«використано», тож це оцінка згори за rewardLimit."),
+    }
+
+
 async def optimize_pack(pack_id: str) -> dict:
     """Підбирає, які з ТВОЇХ купонів і промо спрацюють саме на цей пак.
 

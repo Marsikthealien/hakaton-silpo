@@ -253,6 +253,7 @@ routes = [
     Route("/api/route/save", tool_route("silpo_save_store_layout"), methods=["POST"]),
     Route("/api/weight", tool_route("cart_weight_check")),
     Route("/api/order/risk", tool_route("order_risk"), methods=["GET", "POST"]),
+    Route("/api/savings", tool_route("savings_report", from_query=("receipts",), casts={"receipts": int})),
     Route("/api/family/recipes", tool_route("silpo_get_family_recipes")),
     Route("/api/family/recipe", tool_route("silpo_add_family_recipe"), methods=["POST"]),
     Route("/api/swipe", tool_route("silpo_record_swipe"), methods=["POST"]),

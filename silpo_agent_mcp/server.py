@@ -163,6 +163,7 @@ TOOLS = (
     facade.reorder_pack, facade.mood_pack, facade.evening_pack,
     facade.meal_pack, facade.breakfast_pack, facade.scenarios,
     facade.product_card, facade.cart_weight_check, facade.order_risk,
+    facade.savings_report,
     facade.optimize_pack, facade.swap_item,
     facade.alternatives, facade.swap_to,
     facade.save_pack, facade.my_packs, get_pack, delete_pack,
