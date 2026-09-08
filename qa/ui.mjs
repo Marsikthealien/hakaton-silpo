@@ -138,9 +138,21 @@ await withPage(B + '/', async (ev, _shot, emulate) => {
   // а що саме пішло б у синтез: текст, момент і те, що службові рядки мовчать.
   check('кнопка озвучення є', await ev(`!!document.querySelector('#btn-tts') &&
     document.querySelector('#btn-tts').innerHTML.includes('svg')`));
-  await ev(`window.__spoken=[]; const _s=speechSynthesis.speak.bind(speechSynthesis);
-            speechSynthesis.speak=u=>{window.__spoken.push(u.text); return _s(u);}`);
-  await ev(`toggleTts()`); await sleep(500);
+  // Шляхів озвучення два — Respeecher і браузер, — тож ловимо обидва:
+  // перехоплюємо і speechSynthesis, і запит на /api/tts.
+  await ev(`window.__spoken=[];
+    const _s = speechSynthesis.speak.bind(speechSynthesis);
+    speechSynthesis.speak = u => { window.__spoken.push(u.text); return _s(u); };
+    const _f = window.fetch;
+    window.fetch = (url, opt) => {
+      if (String(url).includes('/api/tts') && opt && opt.body)
+        try { window.__spoken.push(JSON.parse(opt.body).text); } catch (e) {}
+      return _f(url, opt);
+    }; 1`);
+  // Стан озвучення живе в localStorage і переживає прогони, тож спершу
+  // приводимо його до відомого — інакше toggle вимикає замість вмикати.
+  await ev(`if (TTS) toggleTts(); 1`); await sleep(300);
+  await ev(`toggleTts()`); await sleep(600);
   check('озвучення вмикається й памʼятається',
     await ev(`TTS === true && localStorage.getItem('tts') === '1' &&
       document.querySelector('#btn-tts').getAttribute('aria-pressed') === 'true'`));
@@ -153,6 +165,49 @@ await withPage(B + '/', async (ev, _shot, emulate) => {
     await ev(`!(window.__spoken||[]).some(t => t.includes('→') || t.startsWith('скільки я'))`));
   await ev(`toggleTts()`); await sleep(300);
   check('вимикається', await ev(`TTS === false && localStorage.getItem('tts') === '0'`));
+
+  // Індикатор роботи й синхронність тексту з голосом. Підміняємо синтез
+  // повільним, щоб побачити порядок: текст НЕ має випереджати звук.
+  await ev(`
+    window.__textAt = null; window.__playedAt = null;
+    const log = document.querySelector('#log');
+    new MutationObserver(() => {
+      const last = [...log.querySelectorAll('.msg.bot')].pop();
+      if (last && !last.classList.contains('thinking') &&
+          last.textContent.includes('зекономив') && !window.__textAt)
+        window.__textAt = performance.now();
+    }).observe(log, {childList:true, subtree:true, characterData:true});
+    TTS = true; TTS_REMOTE = true;
+    window.speechReady = async () => {
+      await new Promise(r => setTimeout(r, 1800));
+      return () => { window.__playedAt = performance.now(); };
+    }; 1`);
+  await ev(`$('#ask').value='скільки я зекономив'; send(); 1`);
+  const phases = new Set();
+  for (let i = 0; i < 90; i++) {
+    const t = await ev(`(document.querySelector('#log .msg.thinking')||{}).textContent || ''`);
+    if (t) phases.add(t);
+    if (await ev(`(window.__playedAt||0) > 0`)) break;
+    await sleep(200);
+  }
+  check('індикатор показує фази, а не німе «…»',
+    phases.size >= 2 && [...phases].some(p => p.includes('Думаю')) &&
+    [...phases].some(p => p.includes('Озвучую')),
+    JSON.stringify([...phases]));
+  check('текст зʼявляється РАЗОМ із голосом, а не раніше', await ev(`
+    Math.abs((window.__playedAt||0) - (window.__textAt||0)) < 250 &&
+    (window.__textAt||0) > 0`),
+    await ev(`String(Math.round((window.__playedAt||0) - (window.__textAt||0))) + ' мс різниці'`));
+  check('індикатор зникає після відповіді',
+    await ev(`!document.querySelector('#log .msg.thinking')`));
+
+  // Без озвучення затримки бути не повинно
+  await ev(`TTS = false; window.__textAt = null; window.__t0 = performance.now(); 1`);
+  await ev(`$('#ask').value='скільки я зекономив'; send(); 1`);
+  await until(ev, `(window.__textAt||0) > 0`, 60);
+  check('без озвучення текст не чекає',
+    await ev(`((window.__textAt||0) - window.__t0) < 1500`),
+    await ev(`String(Math.round((window.__textAt||0) - window.__t0)) + ' мс'`));
 
   await ev(`setView('mobile')`); await sleep(400);
   check('мобільний вигляд', await ev(`document.body.classList.contains('mobile')`));
@@ -280,11 +335,15 @@ await withPage(B + '/tech', async ev => {
       document.querySelectorAll('#sheet2 pre')[1].textContent.length > 40`));
   await ev(`document.querySelector('#sheet2').close()`);
   check('демо-дані редаговані', await ev(`document.querySelectorAll('#demo .demoset textarea').length === 4`));
+  // Картка голосу тягне перелік із Respeecher — це мережа, треба дочекатись.
+  await until(ev, `document.querySelector('#voice').textContent.includes('Модель')`, 40);
   check('картка голосу є', await ev(`!!document.querySelector('#voice') &&
     document.querySelector('#voice').textContent.includes('Модель')`));
-  check('без ключа чесно каже про браузер', await ev(`
-    fetch('/api/voice').then(r=>r.json()).then(v =>
-      v.has_key || document.querySelector('#voice').textContent.includes('озвучує браузер'))`));
+  check('стан ключа показано чесно', await ev(`
+    fetch('/api/voice').then(r=>r.json()).then(v => {
+      const t = document.querySelector('#voice').textContent;
+      return v.has_key ? t.includes('є ·') : t.includes('озвучує браузер');
+    })`));
   check('накопичений стан видно', await ev(`document.querySelectorAll('#state .call').length === 4`));
 
   await ev(`$('#d-plus').value = JSON.stringify({price_uah:299,cashback:0.08,free_delivery_from_uah:500})`);

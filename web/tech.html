@@ -265,7 +265,7 @@ async function loadVoice(){
       <h3>Обрати голос</h3>
       <div class="chips">${rows.voices.map(x =>
         `<button class="fbtn" aria-pressed="${x.id === rows.chosen}"
-          onclick="pickVoice('${x.id}')">${x.id}${x.gender ? ' · ' + x.gender : ''}</button>`
+          onclick="pickVoice('${x.id}')">${x.id}</button>`
       ).join('')}</div>
       <p class="soft" style="margin:9px 0 0">${rows.note}</p>` : ''}
     ${rows && rows.error ? `<p style="color:var(--red);margin:8px 0 0">${rows.error}</p>` : ''}

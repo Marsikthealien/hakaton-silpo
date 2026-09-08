@@ -202,12 +202,20 @@ function speakLocal(text) {
   speechSynthesis.speak(u);
 }
 
-async function speak(raw) {
-  if (!TTS) return;
+/* Синтез ОКРЕМО від відтворення.
+
+   Раніше текст зʼявлявся одразу, а голос доганяв його через три секунди —
+   виглядало так, ніби агент читає власну репліку вголос уже після того, як
+   сказав її. Тому спершу готуємо аудіо, і лише тоді показуємо текст: голос і
+   рядок мають зʼявитись разом.
+
+   Повертає функцію відтворення або null, якщо озвучувати нема чим. */
+async function speechReady(raw) {
+  if (!TTS) return null;
   const text = ttsText(raw);
-  if (!text) return;
+  if (!text) return null;
   ttsStop();                     // нова відповідь перебиває попередню
-  if (!TTS_REMOTE) return speakLocal(text);
+  if (!TTS_REMOTE) return () => speakLocal(text);
   try {
     // Сирий текст, не почищений: підготовку до вимови робить бекенд —
     // там і числа словами, і наголоси, які вміє лише українська модель.
@@ -217,15 +225,58 @@ async function speak(raw) {
     });
     if (!r.ok) throw new Error('tts ' + r.status);
     const url = URL.createObjectURL(await r.blob());
-    TTS_AUDIO = new Audio(url);
-    TTS_AUDIO.onended = () => URL.revokeObjectURL(url);
-    await TTS_AUDIO.play();
+    return () => {
+      TTS_AUDIO = new Audio(url);
+      TTS_AUDIO.onended = () => URL.revokeObjectURL(url);
+      TTS_AUDIO.play().catch(() => {});
+    };
   } catch (e) {
     // Ключ протух, ліміт, мережа — демо не має замовкати через це.
     TTS_REMOTE = false;
     syncTtsBtn();
-    speakLocal(text);
+    return () => speakLocal(text);
   }
+}
+
+/* Сумісність: озвучити без очікування (кнопка вмикання, довільний текст). */
+async function speak(raw) {
+  const play = await speechReady(raw);
+  if (play) play();
+}
+
+/* ---------- індикатор роботи ----------
+   Замість німого «…» — фази, які відповідають РЕАЛЬНИМ етапам: спершу запит,
+   потім синтез голосу. Гість бачить, на чому саме агент зараз стоїть. */
+const THINK_PHASES = ['Думаю…', 'Дивлюсь у «Сільпо»…', 'Рахую…', 'Майже готово…'];
+
+function thinking(phases) {
+  const list = phases || THINK_PHASES;
+  bubble('it', list[0], { silent: true });
+  const el = $('#log').lastElementChild;
+  el.classList.add('thinking');
+  let i = 0;
+  const timer = setInterval(() => {
+    i = (i + 1) % list.length;
+    el.textContent = list[i];
+  }, 1600);
+  const stop = () => { clearInterval(timer); el.classList.remove('thinking'); };
+  return {
+    el,
+    phase(text) { clearInterval(timer); el.textContent = text; },
+    async finish(text, { voice = true } = {}) {
+      // Текст показуємо ТІЛЬКИ разом із готовим голосом.
+      let play = null;
+      if (voice && TTS) {
+        this.phase('Озвучую…');
+        play = await speechReady(text);
+      }
+      stop();
+      el.textContent = text;
+      $('#log').scrollTop = $('#log').scrollHeight;
+      if (play) play();
+    },
+    fail(text) { stop(); el.className = 'msg err'; el.textContent = text; },
+  };
 }
 
 /* ---------- модалка зі стеком ----------
@@ -713,8 +764,7 @@ async function narrateResult(s, result) {
     return bubble('it', line);
   }
 
-  bubble('it', '…');
-  const line = $('#log').lastElementChild;
+  const t = thinking(['Думаю…', 'Формулюю відповідь…', 'Майже готово…']);
   let n;
   try {
     n = await api('/api/chat/narrate', 'POST',
@@ -722,15 +772,14 @@ async function narrateResult(s, result) {
   } catch (e) {
     n = { error: String((e && e.message) || e) };
   }
+  const line = t.el;
   if (n && n.reply && n.model) {
-    line.textContent = n.reply;      // ШІ справді озвучив
-    speak(n.reply);
+    await t.finish(n.reply);         // ШІ справді озвучив
   } else {
     // «…» обіцяє, що ШІ викликано. Не справдилось — кажемо це прямо,
     // а не підсовуємо детермінований рядок замість моделі.
     const msg = (n && n.error) || 'ШІ не відповів';
-    line.className = 'msg err';
-    line.textContent = msg;
+    t.fail(msg);
     toast(msg);
   }
 }

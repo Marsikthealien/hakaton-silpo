@@ -730,3 +730,8 @@ body.mobile .shell > .side.l,body.mobile .shell > .side.r{display:flex}
    шаблоном була б брехнею — краще видима помилка. */
 .msg.err{background:#FDEBEF;border:1px solid #F7C3CE;color:var(--red);
   border-bottom-left-radius:6px}
+
+/* Індикатор роботи. Пульсація — щоб було видно, що процес живий, навіть коли
+   фраза між змінами стоїть на місці. */
+.msg.thinking{color:var(--muted);animation:think 1.4s ease-in-out infinite}
+@keyframes think{0%,100%{opacity:.55}50%{opacity:1}}

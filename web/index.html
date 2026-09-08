@@ -115,13 +115,14 @@ function appTab(name){
   if (name === 'cart') renderCart($('#cart'));
 }
 
-function bubble(who, text){
+function bubble(who, text, opts){
   const cls = who === 'me' ? 'you' : who === 'tools' ? 'sys' : 'bot';
   $('#log').insertAdjacentHTML('beforeend', `<div class="msg ${cls}">${text}</div>`);
   $('#log').scrollTop = $('#log').scrollHeight;
   // Вголос ідуть лише відповіді агента: власні репліки гість щойно набрав,
-  // а «→ pack_remove» слухати нема сенсу.
-  if (who === 'it' && text !== '…') speak(text);
+  // а «→ pack_remove» слухати нема сенсу. `silent` — для індикатора роботи,
+  // який ще не є відповіддю.
+  if (who === 'it' && !(opts && opts.silent)) speak(text);
 }
 
 async function send(){
@@ -130,14 +131,17 @@ async function send(){
   $('#ask').value = '';
   bubble('me', text);
   CHAT.push({role:'user', content:text});
-  bubble('it', '…');
+  const t = thinking();
   const r = await api('/api/chat', 'POST', { messages: CHAT });
-  $('#log').lastElementChild.remove();
-  if (r.error) return bubble('it', r.error);
+  if (r.error) { t.fail(r.error); return; }
+  // Рядок про виклики tools ставимо ПЕРЕД індикатором, щоб він не перестрибував
+  // через відповідь, коли та зʼявиться.
   if (r.tools_used?.length)
-    bubble('tools', '→ ' + r.tools_used.map(t => t.name).join(' · '));
-  bubble('it', r.reply || 'Готово.');
-  CHAT.push({role:'assistant', content:r.reply || ''});
+    t.el.insertAdjacentHTML('beforebegin',
+      `<div class="msg sys">→ ${r.tools_used.map(x => x.name).join(' · ')}</div>`);
+  const reply = r.reply || 'Готово.';
+  await t.finish(reply);
+  CHAT.push({role:'assistant', content:reply});
   // Пак додається в ту саму стрічку — під відповіддю агента.
   if (r.result?.items) renderPack(r.result);
 }
@@ -176,7 +180,7 @@ document.querySelectorAll('.side .dhead .iconbtn:not(#cart-refresh)')
 (async () => {
   $('#quicks').innerHTML = QUICKS.map(q =>
     `<button onclick="quick('${q}')">${q}</button>`).join('');
-  bubble('it', 'Готовий. Питайте.');
+  bubble('it', 'Готовий. Питайте.', { silent: true });
   await Promise.all([loadStatus(), loadAllergies()]);
   await Promise.all([mountScenarios(), renderCart($('#cart-side')), loadExpiring()]);
   const s = await api('/api/chat/status');
