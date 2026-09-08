@@ -395,52 +395,112 @@ async def popular_now(limit: int = 12) -> dict:
 # ---------------------------------------------------------------------------
 # 8. Ризик збирання замовлення
 # ---------------------------------------------------------------------------
-async def picking_risk(pack_id: str | None = None) -> dict:
+async def picking_risk(pack_id: str | None = None,
+                       avoid: list[str] | None = None) -> dict:
     """Попередити ДО оплати, що позицію можуть не зібрати, і дати заміну.
 
-    `silpo_get_replacements` створений рівно для цього — і не використовується
-    ніде: гість дізнається про заміну дзвінком кур'єра.
+    `silpo_get_replacements` віддає саме позиції з ризиком збирання — це НЕ
+    просто `stock: 0` — і кандидатів на заміну від самого «Сільпо». Tool
+    створений рівно для цього і не використовується ніде: зараз про заміну
+    гість дізнається дзвінком кур'єра вже після оплати.
+
+    Джерело позицій: пак, інакше активне онлайн-замовлення в збиранні, інакше
+    поточний кошик. Кандидати, що порушують алергію або дієту, відпадають —
+    інакше «заміна наперед» підсунула б те, чого людині не можна.
     """
     from . import packs
+    from .facade import _blocked_by, expand_avoid
+
+    ctx = await context.ensure()
+
+    # Обмеження: наші алергії плюс дієти з акаунта «Сільпо».
+    terms = list(expand_avoid(avoid))
+    try:
+        diets = await silpo.call("silpo_get_my_food_restrictions", {})
+        for restriction in diets.get("restrictions", []):
+            slug = restriction.get("slug") or ""
+            if slug and slug != "all-food":
+                terms += expand_avoid([slug.replace("-free", "").replace("-", " ")])
+    except SilpoError:
+        pass
+    terms = sorted({t for t in terms if t})
+
+    source, names, ids = "cart", {}, []
+    branch_id, company_id = ctx["branchId"], ctx.get("companyId")
 
     if pack_id:
         pack = packs.get(pack_id)
         if not pack:
             raise SilpoError(f"Пак {pack_id} не знайдено.")
+        source = "pack"
         rows = pack.get("items") or []
-        ids = [i["product_id"] for i in rows if i.get("product_id")]
-        names = {i["product_id"]: i.get("name") for i in rows}
+        first = rows[0] if rows else {}
+        branch_id = first.get("branch_id") or branch_id
+        company_id = first.get("company_id") or company_id
     else:
-        detail = await context.cart_details()
-        cart = detail.get("cart") or detail
-        rows = (cart.get("shipments") or [{}])[0].get("products") or []
-        ids = [i["productId"] for i in rows if i.get("productId")]
-        names = {i["productId"]: i.get("name") for i in rows}
-    if not ids:
-        return {"checked": 0, "risky": [], "note": "Порожньо — нічого перевіряти."}
+        rows = []
+        try:
+            data = await silpo.call("silpo_get_my_online_orders", {"limit": 5})
+            for candidate in data.get("orders", []):
+                state = (candidate.get("status") or candidate.get("state") or "").lower()
+                if state and not any(k in state for k in
+                                     ("deliver", "done", "complete", "cancel",
+                                      "closed", "issued")):
+                    rows = [{"product_id": p.get("productId") or p.get("id"),
+                             "name": p.get("name")}
+                            for p in (candidate.get("products") or [])]
+                    source = "order"
+                    break
+        except SilpoError:
+            pass
+        if not rows:
+            detail = await context.cart_details()
+            cart = detail.get("cart") or detail
+            rows = [{"product_id": i.get("productId"), "name": i.get("name")}
+                    for i in ((cart.get("shipments") or [{}])[0].get("products") or [])]
 
-    await context.ensure()
+    for row in rows:
+        pid = row.get("product_id")
+        if pid:
+            ids.append(str(pid))
+            names[str(pid)] = row.get("name")
+    if not ids:
+        return {"checked": 0, "risky": [], "source": source,
+                "note": "Порожньо — нічого перевіряти."}
+
     data = await silpo.call("silpo_get_replacements", {
-        "branchId": silpo.ctx["branchId"], "companyId": silpo.ctx["companyId"],
-        "deliveryType": silpo.ctx["deliveryType"], "productIds": ids[:30]})
-    rows = []
+        "branchId": branch_id, "companyId": company_id,
+        "deliveryType": ctx["deliveryType"], "productIds": ids[:30]})
+
+    risky, dropped = [], []
     for entry in (data.get("replacements") or data.get("items") or []):
-        pid = entry.get("productId") or entry.get("id")
-        options = entry.get("replacements") or entry.get("products") or []
-        rows.append({
-            "product_id": pid, "name": names.get(pid) or entry.get("name"),
-            "risk": entry.get("risk") or entry.get("assemblyRisk"),
-            "options": [{"name": o.get("name"), "slug": o.get("slug"),
-                         "price": o.get("price"), "image": o.get("image")}
-                        for o in options[:4]],
-        })
-    risky = [r for r in rows if r["options"] or r["risk"]]
-    return {"checked": len(ids), "risky": risky, "risky_count": len(risky),
-            "raw_keys": sorted(data.keys()),
-            "headline": (f"{len(risky)} з {len(ids)} позицій можуть не зібрати — "
-                         "заміни підібрані наперед." if risky
-                         else "Ризикових позицій немає — збереться як є."),
-            "why": "Попередження до оплати замість дзвінка кур'єра після."}
+        pid = str(entry.get("productId") or entry.get("id") or "")
+        options = []
+        for opt in (entry.get("replacements") or entry.get("products") or []):
+            hit = _blocked_by(opt.get("name", ""), terms)
+            if hit:
+                dropped.append({"name": opt.get("name"), "because": hit})
+                continue
+            options.append({"name": opt.get("name"), "slug": opt.get("slug"),
+                            "price": opt.get("price"), "image": opt.get("image")})
+        risky.append({"product_id": pid, "name": names.get(pid) or entry.get("name"),
+                      "risk": entry.get("risk") or entry.get("assemblyRisk"),
+                      "options": options[:4]})
+
+    risky = [r for r in risky if r["options"] or r["risk"]]
+    return {
+        "checked": len(ids), "source": source, "risky": risky,
+        "risky_count": len(risky), "checked_for": terms,
+        "hidden_by_restrictions": dropped,
+        "verdict": (f"{len(risky)} з {len(ids)} позицій можуть не зібрати — "
+                    "заміни підібрані наперед." if risky
+                    else "Ризикових позицій немає — збереться як є."),
+        "headline": (f"{len(risky)} з {len(ids)} позицій можуть не зібрати."
+                     if risky else "Ризикових позицій немає — збереться як є."),
+        "why": ("Попередження до оплати замість дзвінка кур'єра після. Заміни, "
+                "що порушують алергію чи дієту, відсіяні: інакше «рішення "
+                "наперед» підсунуло б те, чого не можна."),
+    }
 
 
 # ---------------------------------------------------------------------------

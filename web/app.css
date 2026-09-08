@@ -724,3 +724,9 @@ body.mobile .shell > .side.l,body.mobile .shell > .side.r{display:flex}
    воно виглядало як аварія рівня застосунку, а не як зауваження до набору. */
 .packmsg .warn{margin:12px 0 0;border-radius:12px}
 .msg.sys{margin:0 0 8px}
+
+/* Повідомлення про те, що ШІ не відповів. Червоне навмисно: у режимі
+   «Через модель» бульбашка «…» обіцяє виклик моделі, і мовчазна підміна
+   шаблоном була б брехнею — краще видима помилка. */
+.msg.err{background:#FDEBEF;border:1px solid #F7C3CE;color:var(--red);
+  border-bottom-left-radius:6px}

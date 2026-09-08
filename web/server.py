@@ -185,6 +185,16 @@ async def chat_status_route(request: Request):
     return ok(state)
 
 
+async def chat_narrate(request: Request):
+    """Озвучення вже виконаного сценарію. Модель не відповіла → 502, і фронт
+    показує помилку замість того, щоб мовчки підсунути шаблонний рядок."""
+    payload = await body(request)
+    out = await chatmod.narrate(payload.get("phrase", ""),
+                                payload.get("result") or {},
+                                payload.get("tool"))
+    return JSONResponse(out, status_code=502 if out.get("error") else 200)
+
+
 async def chat_send(request: Request):
     payload = await body(request)
     return ok(await chatmod.chat(payload.get("messages", []), host))
@@ -304,7 +314,8 @@ routes = [
     Route("/api/certificates", tool_route("certificates")),
     Route("/api/certificates/apply", tool_route("certificate_apply"), methods=["POST"]),
     Route("/api/popular", tool_route("popular_now")),
-    Route("/api/risk", tool_route("picking_risk"), methods=["GET", "POST"]),
+    Route("/api/risk", tool_route("picking_risk", from_query=("pack_id",)),
+          methods=["GET", "POST"]),
     Route("/api/compare", tool_route("compare_branches",
           casts={"limit": int}), methods=["POST"]),
     Route("/api/np", tool_route("np_offices", from_query=("city", "query"))),
@@ -346,6 +357,7 @@ routes = [
     # --- чат ---
     Route("/api/chat/status", chat_status_route),
     Route("/api/chat", chat_send, methods=["POST"]),
+    Route("/api/chat/narrate", chat_narrate, methods=["POST"]),
 ]
 
 

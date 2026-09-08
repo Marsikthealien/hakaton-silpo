@@ -117,6 +117,23 @@ await withPage(B + '/', async (ev, _shot, emulate) => {
   check('чек-детектив', await ev(`$('#ires-coupons').textContent.includes('Спрацювало')`),
     (await ev(`$('#ires-coupons').textContent`) || '').slice(0, 70).replace(/\s+/g, ' '));
 
+  // «Через модель» = «Напряму»: сценарій виконується тим самим MCP-викликом,
+  // модель лише переказує. Ollama в тестах немає, тож перевіряємо головне —
+  // що пак усе одно зібрався, а про мовчання ШІ сказано прямо.
+  await ev(`setMode('llm')`);
+  await ev(`runScenario('repeat')`);
+  await until(ev, `[...document.querySelectorAll('#log .msg')].some(m =>
+    m.classList.contains('err') || m.textContent.includes('ШІ'))`, 60);
+  check('«через модель» дає той самий пак',
+    await ev(`!!document.querySelector('.packmsg .prod') &&
+      ((PACK||{}).source === 'receipt')`),
+    await ev(`(PACK||{}).name || ''`));
+  check('без Ollama каже прямо, а не підміняє шаблоном',
+    await ev(`[...document.querySelectorAll('#log .msg')].some(m =>
+      m.classList.contains('err'))`),
+    await ev(`(document.querySelector('#log .msg.err')||{}).textContent || ''`));
+  await ev(`setMode('direct')`);
+
   // Озвучення. У headless-браузері голосів немає, тому перевіряємо не звук,
   // а що саме пішло б у синтез: текст, момент і те, що службові рядки мовчать.
   check('кнопка озвучення є', await ev(`!!document.querySelector('#btn-tts') &&

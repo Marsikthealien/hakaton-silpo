@@ -687,23 +687,52 @@ async function runScenario(id, extraBody) {
   const before = (await api('/api/trace?limit=1')).total;
   const stop = await watchChain(id, before);
 
-  let result;
-  if (MODE === 'llm') {
-    const chat = await api('/api/chat', 'POST', { messages: [{ role: 'user', content: s.phrase }] });
-    if (chat.error) { toast(chat.error + ' — виконую напряму'); }
-    result = chat.error ? await callScenario(s, extraBody) : chat;
-    if (!chat.error && window.bubble) {
-      bubble('me', s.phrase);
-      if (chat.tools_used?.length) bubble('tools', '→ ' + chat.tools_used.map(t => t.name).join(' · '));
-      bubble('it', chat.reply || '—');
-    }
-    const packs = await api('/api/packs');
-    if (packs.packs?.length) result = await api('/api/pack?pack_id=' + packs.packs[0].id);
-  } else {
-    result = await callScenario(s, extraBody);
-  }
+  // Сценарій ЗАВЖДИ виконується тим самим MCP-викликом — і від кнопки, і
+  // «через модель». Тому обидва режими дають рівно той самий пак; модель у
+  // другому режимі лише переказує готовий результат людською мовою.
+  const result = await callScenario(s, extraBody);
   stop();
+  if (MODE === 'llm') return narrateResult(s, result);
   handleResult(s, result);
+}
+
+/* «Через модель»: показуємо пак і просимо модель озвучити його. */
+async function narrateResult(s, result) {
+  bubble('me', s.phrase);
+  if (!result || result.error) {
+    bubble('it', 'Сценарій не виконався — дивись повідомлення про помилку.');
+    return handleResult(s, result);
+  }
+  handleResult(s, result);
+
+  // Модель озвучує лише ПАК. У вердикт-екранів (вага, ризик збирання,
+  // доставка) немає ні сум, ні позицій — модель їх просто вигадує.
+  const isPack = result.item_count != null || Array.isArray(result.items);
+  if (!isPack) {
+    const line = result.verdict || result.headline || 'Готово — дивись картку нижче.';
+    return bubble('it', line);
+  }
+
+  bubble('it', '…');
+  const line = $('#log').lastElementChild;
+  let n;
+  try {
+    n = await api('/api/chat/narrate', 'POST',
+      { phrase: s.phrase, tool: (s.tools?.[0] || '').replace('*', ''), result });
+  } catch (e) {
+    n = { error: String((e && e.message) || e) };
+  }
+  if (n && n.reply && n.model) {
+    line.textContent = n.reply;      // ШІ справді озвучив
+    speak(n.reply);
+  } else {
+    // «…» обіцяє, що ШІ викликано. Не справдилось — кажемо це прямо,
+    // а не підсовуємо детермінований рядок замість моделі.
+    const msg = (n && n.error) || 'ШІ не відповів';
+    line.className = 'msg err';
+    line.textContent = msg;
+    toast(msg);
+  }
 }
 
 async function callScenario(s, extraBody) {

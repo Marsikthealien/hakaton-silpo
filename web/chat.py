@@ -11,13 +11,25 @@ MCPHost, а виклики моделі маршрутизуються наза�
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
+import time
 
 import httpx2
 
+log = logging.getLogger("packagent.ai")
+
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 MODEL = os.environ.get("OLLAMA_MODEL", "")  # порожньо = авто-вибір
+
+# Ліміт на ОДИН крок tool-loop. Було 300 с — при шести кроках це до півгодини
+# «…» у бульбашці, тобто демо, яке ніколи не завершується. Перевищив — крок
+# кидає помилку, і гість бачить її, а не мовчання.
+CHAT_TIMEOUT = float(os.environ.get("CHAT_TIMEOUT", "120"))
+# Скільки чекати на озвучення вже готового результату. Довше — частіше доходить
+# до тексту моделі; коротше — швидше кидає помилку.
+NARRATE_TIMEOUT = float(os.environ.get("NARRATE_TIMEOUT", "60"))
 
 _PREFERRED = ["qwen2.5:7b", "qwen2.5:3b", "qwen2.5:3b-instruct",
               "llama3.2:3b", "qwen2.5", "qwen3:4b", "qwen3:1.7b", "qwen3"]
@@ -120,6 +132,7 @@ async def _fallback(messages: list[dict], host) -> dict:
             args.setdefault("avoid", avoid)
         if profile.get("bonus_first"):
             args.setdefault("prefer_promo", True)
+    log.info("fallback: %r → правило %s %s", text[:60], intent["tool"], args)
     result = await host.call(intent["tool"], args)
     if result.get("error"):
         return {"reply": result["error"], "tools_used": [{"name": intent["tool"], "args": args}],
@@ -162,6 +175,90 @@ async def chat_available() -> dict:
                 "hint": "Запусти Ollama та `ollama pull qwen2.5:3b`."}
 
 
+def _digest(result: dict) -> str:
+    """Стислий зліпок результату для промпта.
+
+    Моделі потрібні числа, а не три кілобайти slug'ів, картинок і branch_id:
+    локальна 3B на такому вході не встигає навіть прочитати запит.
+    """
+    if not isinstance(result, dict):
+        return json.dumps(result, ensure_ascii=False)[:400]
+    keep = {k: result[k] for k in
+            ("name", "item_count", "total_uah", "saved_uah", "source", "verdict")
+            if result.get(k) is not None}
+    first = [i.get("name") for i in (result.get("items") or [])[:4] if i.get("name")]
+    if first:
+        keep["перші_товари"] = first
+    return json.dumps(keep, ensure_ascii=False)
+
+
+async def narrate(phrase: str, result: dict, tool: str | None = None) -> dict:
+    """Озвучити ВЖЕ виконаний сценарій справжнім викликом моделі.
+
+    Сам результат рахує сценарій — тим самим MCP-викликом, що й кнопка
+    «Напряму». Тому режим «Через модель» дає РІВНО той самий пак, а не свій.
+    Модель тут лише формулює підсумок людською мовою; інструментів їй не даємо.
+
+    Підсумок віддаємо ТІЛЬКИ якщо модель справді відповіла. Немає Ollama,
+    таймаут, HTTP-помилка, порожня відповідь → {"error": ...}, а не тихий
+    детермінований рядок: бульбашка «…» обіцяє гостю, що ШІ викликано, і
+    підсунути замість нього шаблон означало б збрехати.
+    """
+    # Модель озвучує лише ПАК: там є склад, сума, знижка. У вердикт-екранів
+    # (вага, ризик збирання, доставка) сум і позицій немає взагалі, і модель
+    # їх вигадує — «у кошику нуль гривень». Для них віддаємо вердикт як є.
+    is_pack = isinstance(result, dict) and (
+        result.get("item_count") is not None or result.get("items"))
+    if not is_pack:
+        verdict = result.get("verdict") if isinstance(result, dict) else None
+        return {"reply": verdict or "Готово — дивись картку нижче.",
+                "narrated": False, "model": None}
+
+    status = await chat_available()
+    if not status["available"]:
+        log.warning("narrate FAIL | Ollama офлайн (%s)", OLLAMA_URL)
+        return {"error": f"ШІ недоступний: {status.get('hint', 'Ollama не відповідає')}",
+                "offline": True}
+
+    model = status["model"]
+    payload = _digest(result)
+    # Той самий голосовий стиль, що й у чаті: підсумок піде в озвучення, тож
+    # списки й «143.94» тут зіпсували б звук так само.
+    prompt = (f"Пак «Сільпо» ({tool or 'пак'}) на фразу «{phrase}» дав "
+              f"результат: {payload}\n\n"
+              "Перекажи це одним-двома короткими реченнями українською: що "
+              "зібрано, скільки позицій, на яку суму. Тільки з цих даних, "
+              "нічого не додавай. Звичайний текст без списків і зірочок.")
+    convo = [{"role": "user", "content": prompt
+              + (" /no_think" if model.startswith("qwen3") else "")}]
+
+    log.info("narrate >> %s | model=%s tool=%s phrase=%r payload=%dc",
+             OLLAMA_URL, model, tool, phrase[:80], len(payload))
+    t0 = time.perf_counter()
+    try:
+        async with httpx2.AsyncClient(timeout=NARRATE_TIMEOUT) as client:
+            response = await client.post(f"{OLLAMA_URL}/api/chat", json={
+                "model": model, "messages": convo, "stream": False,
+                "think": False, "keep_alive": "15m",
+                "options": {"temperature": 0.2, "num_predict": 80}})
+    except Exception as exc:  # noqa: BLE001 — гість має побачити причину
+        log.warning("narrate FAIL %.0f ms | %s: %s",
+                    (time.perf_counter() - t0) * 1000, type(exc).__name__, str(exc)[:160])
+        return {"error": f"ШІ не відповів: {type(exc).__name__}", "model": model}
+
+    ms = (time.perf_counter() - t0) * 1000
+    if response.status_code != 200:
+        log.warning("narrate FAIL HTTP %s | %.0f ms | %s",
+                    response.status_code, ms, response.text[:160])
+        return {"error": f"ШІ помилка HTTP {response.status_code}", "model": model}
+    reply = _strip_think(response.json().get("message", {}).get("content"))
+    if not reply:
+        log.warning("narrate FAIL | %.0f ms | порожня відповідь", ms)
+        return {"error": "ШІ повернув порожню відповідь", "model": model}
+    log.info("narrate << %.0f ms | model=%s | reply=%r", ms, model, reply[:120])
+    return {"reply": reply, "narrated": True, "model": model}
+
+
 async def chat(messages: list[dict], host, max_steps: int = 6) -> dict:
     """Tool-loop через Ollama; інструменти виконуються по MCP через host."""
     status = await chat_available()
@@ -175,7 +272,7 @@ async def chat(messages: list[dict], host, max_steps: int = 6) -> dict:
         convo[-1] = {**convo[-1], "content": convo[-1]["content"] + " /no_think"}
 
     tools_used = []
-    async with httpx2.AsyncClient(timeout=300) as client:
+    async with httpx2.AsyncClient(timeout=CHAT_TIMEOUT) as client:
         for _ in range(max_steps):
             response = await client.post(f"{OLLAMA_URL}/api/chat", json={
                 "model": model, "messages": convo, "tools": tools,
@@ -186,6 +283,8 @@ async def chat(messages: list[dict], host, max_steps: int = 6) -> dict:
                         "error": f"Ollama {response.status_code}: {response.text[:200]}"}
             message = response.json().get("message", {})
             calls = message.get("tool_calls") or []
+            log.info("chat step | model=%s | tools=%s", model,
+                     [c["function"]["name"] for c in calls] or "—")
             if not calls:
                 return {"reply": _strip_think(message.get("content")),
                         "tools_used": tools_used}
