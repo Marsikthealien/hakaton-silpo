@@ -39,6 +39,20 @@ def _content_text(result) -> str:
     )
 
 
+PREVIEW_CHARS = 1800
+
+
+def _preview(value: Any) -> str | None:
+    """Відповідь tool у вигляді, придатному для показу в «під капотом»."""
+    if value is None:
+        return None
+    try:
+        text = json.dumps(value, ensure_ascii=False, indent=1)
+    except (TypeError, ValueError):
+        text = str(value)
+    return text if len(text) <= PREVIEW_CHARS else text[:PREVIEW_CHARS] + "\n… (обрізано)"
+
+
 def _parse(text: str) -> Any:
     try:
         return json.loads(text)
@@ -135,7 +149,7 @@ class SilpoMCP:
         started = time.perf_counter()
         try:
             data = await self._dispatch(tool, args)
-            self._log(tool, args, started, ok=True)
+            self._log(tool, args, started, ok=True, result=data)
             return data
         except SilpoError:
             self._log(tool, args, started, ok=False, note="немає доступу")
@@ -144,7 +158,7 @@ class SilpoMCP:
             self._task = None  # змусити підняти новий сеанс
             try:
                 data = await self._dispatch(tool, args)
-                self._log(tool, args, started, ok=True, note="перепідключення")
+                self._log(tool, args, started, ok=True, note="перепідключення", result=data)
                 return data
             except Exception as second:
                 self._log(tool, args, started, ok=False,
@@ -162,24 +176,28 @@ class SilpoMCP:
 
     # -- трейс -------------------------------------------------------------
     def _log(self, tool: str, args: dict, started: float, *, ok: bool, note: str = "",
-             kind: str = "real") -> None:
+             kind: str = "real", result: Any = None) -> None:
         self.trace.append({
             "tool": tool, "kind": kind,
             "args": {k: v for k, v in args.items()
                      if k not in ("timeslotStart", "timeslotEnd", "shoppingCartId")},
+            # Відповідь тримаємо обрізаною: у трейсі 200 записів, а один пошук
+            # повертає сотні кілобайт. Для «під капотом» вистачає початку —
+            # видно форму даних і те, що вони справжні.
+            "out": _preview(result),
             "ms": round((time.perf_counter() - started) * 1000),
             "ok": ok, "note": note, "at": time.strftime("%H:%M:%S"),
         })
         del self.trace[:-MAX_TRACE]
 
     def log_proposed(self, tool: str, args: dict, started: float, *, ok: bool = True,
-                     note: str = "") -> None:
+                     note: str = "", result: Any = None) -> None:
         """Слід виклику ЗАПРОПОНОВАНОГО tool — того, якого в MCP «Сільпо» ще немає.
 
         Пишемо в той самий трейс, але з kind="proposed": у демо видно, де агент
         працює з реальним API, а де — з тим, що ми просимо Сільпо додати.
         """
-        self._log(tool, args, started, ok=ok, note=note, kind="proposed")
+        self._log(tool, args, started, ok=ok, note=note, kind="proposed", result=result)
 
     def trace_tail(self, limit: int = 30) -> list[dict]:
         return self.trace[-limit:]

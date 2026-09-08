@@ -22,7 +22,10 @@ STORE_PATH = os.path.join(ROOT, ".mcp", "packs.json")
 # позицію у справжній кошик через silpo_add_or_update_cart_products.
 ITEM_FIELDS = ("product_id", "external_id", "company_id", "branch_id", "slug", "name",
                "price", "old_price", "image", "qty", "query", "note", "swapped_from",
-               "weighted", "multibuy")
+               "weighted", "multibuy",
+               # пояснення, чому позиція тут: без них автоматичний кошик
+               # неможливо довірити, а після перезбереження вони губились
+               "because", "scaled", "novelty_relaxed")
 
 
 def _now() -> str:

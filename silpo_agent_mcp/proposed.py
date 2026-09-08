@@ -561,14 +561,82 @@ async def record_swipe(product_id: str, external_id: int | None = None,
         except SilpoError:
             pass
     from . import weights as tastes
-    tastes.bump(name or str(product_id), "swipe_right" if liked else "swipe_left")
+    moved = tastes.bump(name or str(product_id), "swipe_right" if liked else "swipe_left")
     done("вправо → «Обране»" if mirrored else "вліво → лише в нас")
-    return {"product_id": product_id, "liked": liked,
+    return {"product_id": product_id, "liked": liked, "name": name,
             "mirrored_to_favorites": mirrored,
+            # Свайп зсуває вагу і товару, і його полиці — тож наступна підбірка
+            # змінюється не лише для цього товару. Показуємо це одразу.
+            "weight": moved.get("weight"),
+            "category": moved.get("category"),
+            "category_weight": moved.get("category_weight"),
+            "effect": (f"{'+' if liked else '−'}2 до «{name}» і до полиці "
+                       f"«{_aisle_of(name or '')[1]}»"),
             "total_swipes": len(swipes), "proposed": True,
             "spec": ("Має зберігати обидва напрямки свайпу з «Департаменту дивинок». "
                      "Відмова — половина сигналу для рекомендацій, і зараз вона "
                      "втрачається. " + SPEC_URL)}
+
+
+async def swipe_deck(limit: int = 12) -> dict:
+    """ЗАПРОПОНОВАНИЙ tool. Колода карток для «Департаменту дивинок».
+
+    Картки не випадкові й не однакові для всіх. Беремо акційні товари з полиць,
+    які гість уже любить (додатна вага категорії), плюс одну полицю «на виріст» —
+    інакше підбірка замикається на тому самому. Усе, що вже свайпнули, зникає:
+    саме памʼяті про відмови в API й немає.
+    """
+    from . import weights as tastes
+    from .facade import search, to_item
+
+    done = _traced("silpo_get_swipe_deck", {"limit": limit})
+    swiped = {str(k) for k in (_load().get("swipes") or {})}
+    snapshot = tastes.snapshot(limit=40)
+    liked_shelves = [c for c in snapshot["categories"] if c["weight"] > 0][:4]
+    # Одна полиця «на виріст» обовʼязково: якщо всі ваги додатні, беремо
+    # найслабшу. Колода лише з улюбленого перестає бути відкриттям.
+    cold = ([c for c in snapshot["categories"] if c["weight"] <= 0]
+            or snapshot["categories"][-1:])[:1]
+
+    queries, source = [], {}
+    for shelf in liked_shelves + cold:
+        query = shelf["title"].split(",")[0].split(" та ")[0].lower()
+        queries.append(query)
+        source[query] = shelf
+    if not queries:
+        queries, source = ["новинки", "десерт", "снеки"], {}
+
+    found = await search(queries, limit=8)
+    cards, shown = [], set()
+    for query, products in found.items():
+        shelf = source.get(query) or {}
+        for product in products:
+            pid = str(product.get("id"))
+            if pid in swiped or not product.get("available"):
+                continue
+            if tastes.known(product.get("name", "")):
+                continue  # те, що вже куповане, оцінювати нецікаво
+            if tastes._key(product.get("name", "")) in shown:
+                continue  # два смаки одного шоколаду — це одна картка, не дві
+            shown.add(tastes._key(product.get("name", "")))
+            card = to_item(product, query)
+            card["product_id"] = pid
+            card["shelf"] = shelf.get("title") or query
+            card["shelf_weight"] = shelf.get("weight")
+            card["on_promo"] = bool(product.get("oldPrice") or product.get("specialPrices"))
+            card["why"] = (f"з полиці «{shelf.get('title')}», яку ти любиш (вага "
+                           f"{shelf.get('weight')})" if (shelf.get("weight") or 0) > 0
+                          else "полиця, яку ти майже не береш — раптом зайде")
+            cards.append(card)
+    cards.sort(key=lambda c: (not c["on_promo"], -(c.get("shelf_weight") or 0)))
+    done(f"{len(cards[:limit])} карток")
+    return {"cards": cards[:limit], "already_swiped": len(swiped),
+            "shelves": [{"title": s["title"], "weight": s["weight"]} for s in liked_shelves],
+            "exploring": [c["title"] for c in cold],
+            "proposed": True,
+            "spec": ("Колода будується з ваг, які накопичують самі свайпи. Щоб це "
+                     "працювало, потрібна памʼять про ВІДМОВИ: «Обране» зберігає "
+                     "лише «так», і половина сигналу зникає. " + SPEC_URL)}
 
 
 def get_swipes(liked: bool | None = None) -> dict:
@@ -702,15 +770,15 @@ def wellbeing_state() -> dict:
 # нема на чому — а саме вони найкраще пояснюють, навіщо MCP потрібні сусіди.
 CONNECTORS = [
     {"id": "samsung_fridge", "name": "Samsung Family Hub", "kind": "холодильник",
-     "gives": "інвентар полиць і терміни придатності", "icon": "🧊"},
+     "gives": "інвентар полиць і терміни придатності", "icon": "fridge"},
     {"id": "flo", "name": "Flo", "kind": "жіноче здоровʼя",
-     "gives": "фаза циклу, самопочуття", "icon": "🌸"},
+     "gives": "фаза циклу, самопочуття", "icon": "flower"},
     {"id": "google_fit", "name": "Google Fit", "kind": "активність",
-     "gives": "тренування, кроки, сон", "icon": "🏃"},
+     "gives": "тренування, кроки, сон", "icon": "heartbeat"},
     {"id": "daylio", "name": "Daylio", "kind": "настрій",
-     "gives": "щоденні позначки настрою", "icon": "🙂"},
+     "gives": "щоденні позначки настрою", "icon": "spark"},
     {"id": "google_calendar", "name": "Google Календар", "kind": "плани",
-     "gives": "події, гості, дні народження", "icon": "📅"},
+     "gives": "події, гості, дні народження", "icon": "calendar"},
 ]
 
 _DEMO_FAMILY = {
@@ -798,45 +866,58 @@ def _demo_prefs_for(role: str) -> dict:
 SILPO_CATEGORIES = [
     ("frukty-ovochi-4788", "Фрукти, овочі",
      ["яблук", "банан", "виноград", "морква", "картопл", "цибул", "салат", "зелен",
-      "помідор", "огірк", "авокадо", "лимон", "ягод", "гарбуз", "буряк", "капуст", "часник"]),
+      "помідор", "огірк", "авокадо", "лимон", "ягод", "гарбуз", "буряк", "капуст", "часник",
+      "баклажан", "батат", "перець", "кабач", "редис", "селер", "імбир", "груш", "слив",
+      "персик", "нектарин", "черешн", "диня", "кавун", "ківі", "мандарин", "апельсин", "томат",
+      "печериц", "гриб", "кріп", "петрушк", "базилік", "руккол", "шпинат", "броколі",
+      "спарж", "кукурудза", "хурма", "гранат", "манго", "ананас"]),
     ("m-iaso-4411", "М'ясо",
      ["філе", "стейк", "фарш", "курк", "свинин", "яловичин", "індич"]),
     ("ryba-4430", "Риба",
      ["риб", "лосос", "тунець", "оселед", "креветк", "форел", "морепродукт", "норі"]),
     ("kovbasni-vyroby-i-m-iasni-delikatesy-4731", "Ковбаси і м'ясні делікатеси",
-     ["ковбас", "бекон", "салямі", "кабанос", "шинк", "сосиск", "паштет"]),
+     ["ковбас", "бекон", "салямі", "кабанос", "шинк", "сосиск", "паштет", "підчеревин", "балик"]),
     ("syry-1468", "Сири",
      ["сир", "пармезан", "камамбер", "моцарел", "брі", "фета"]),
     ("khlib-ta-vypichka-5121", "Хліб та випічка",
      ["хліб", "багет", "лаваш", "булоч", "плетінк", "завиванец", "пампух", "ріжок",
-      "тортилья", "сухар"]),
+      "тортилья", "сухар", "круасан", "чіабат", "фокач", "коржі", "батон", "паляниц",
+      "штрудель", "ромова баба", "тісто", "піта"]),
     ("gotovi-stravy-i-kulinariia-4761", "Готові страви і кулінарія",
      ["готова", "олів'є", "суші сет"]),
     ("molochni-produkty-ta-iaitsia-234", "Молочні продукти та яйця",
      ["молок", "сметан", "йогурт", "кефір", "ряжан", "масло вершк", "вершк", "яйц",
       "сир кисломолочн", "творог"]),
     ("zdorove-kharchuvannia-4864", "Здорове харчування",
-     ["гранол", "пластівц", "протеїн"]),
+     ["гранол", "пластівц", "протеїн", "сніданок", "мюслі", "хлібц", "батончик злаков"]),
     ("bakaliia-i-konservy-4870", "Бакалія і консерви",
      ["рис", "гречк", "макарон", "спагет", "борошн", "цукор", "олі", "консерв",
-      "квасол", "мед", "желатин"]),
+      "квасол", "мед", "желатин", "вермішель", "локшин", "паста", "крупа", "пшон",
+      "сочевиц", "булгур", "кус-кус", "горох", "оцет", "сухофрукт", "рамен"]),
     ("sousy-i-spetsii-4938", "Соуси і спеції",
      ["соус", "кетчуп", "майонез", "гірчиц", "спеці", "паприк", "приправ", "сіль"]),
     ("solodoshchi-498", "Солодощі",
-     ["шоколад", "цукерк", "печив", "вафл", "торт", "десерт", "батончик"]),
+     ["шоколад", "цукерк", "печив", "вафл", "торт", "десерт", "батончик", "roshen",
+      "карамель", "донат", "пончик", "мармелад", "зефір", "халва", "джем", "варення",
+      "рулет", "маршмеллоу", "нуга", "пастил", "кекс", "мафін", "тістечк"]),
     ("sneky-ta-chypsy-5016", "Снеки та чипси",
-     ["чипси", "снек", "попкорн", "сухарик", "крекер"]),
+     ["чипси", "снек", "попкорн", "сухарик", "крекер", "грінк", "фісташк", "арахіс",
+      "горіх", "мигдал", "кешʼю", "кеш'ю", "насінн", "паличк кукурудзян", "начос"]),
     ("kava-chai-359", "Кава, чай", ["кава", "чай"]),
-    ("napoi-52", "Напої", ["вод", "сік", "кола", "напій", "нектар", "лимонад"]),
+    ("napoi-52", "Напої", ["вод", "сік", "кола", "напій", "нектар", "лимонад",
+                            "морс", "квас", "смузі", "енергетик", "тонік"]),
     ("zamorozhena-produktsiia-264", "Заморожена продукція",
-     ["заморож", "пельмен", "варен", "морозиво", "піца"]),
+     ["заморож", "пельмен", "варен", "морозиво", "піца", "нагетс", "картопля фрі",
+      "млинц", "хінкал", "чебурек"]),
     ("alkogol-22", "Алкоголь",
      ["вино", "пиво", "горілк", "віскі", "лікер", "шампан", "просекко", "ігрист"]),
     ("dytiachi-tovary-449", "Дитячі товари", ["підгуз", "дитяч"]),
     ("gigiiena-ta-krasa-4519", "Гігієна та краса",
-     ["мило", "шампун", "гель для", "паста зубн", "дезодорант"]),
+     ["мило", "шампун", "гель для", "паста зубн", "дезодорант", "крем для", "бальзам",
+      "лосьйон", "зубн", "прокладк", "пінка", "маска для"]),
     ("dlia-domu-567", "Для дому",
-     ["пакет", "рушник", "серветк", "порошок", "губк", "освіжувач"]),
+     ["пакет", "рушник", "серветк", "порошок", "губк", "освіжувач", "дошок", "дошка",
+      "контейнер", "фольг", "плівк", "свічк", "батарейк", "лампа", "мішк", "н-р "]),
     ("dlia-tvaryn-653", "Для тварин", ["корм", "котів", "собак", "наповнювач"]),
 ]
 
@@ -854,12 +935,29 @@ _EXCLUDE = {
 
 
 def _aisle_of(name: str) -> tuple[str, str]:
+    """Відділ за назвою товару. Два правила, обидва — з розбору назв «Сільпо».
+
+    Перше: тип товару в назві стоїть ПЕРШИМ («Чипси Люкс зі смаком сметани та
+    зелені»), тож спершу дивимось лише на початок назви, і аж потім на решту.
+    Без цього чипси зі смаком зелені їдуть у «Фрукти, овочі».
+
+    Друге: серед збігів виграє найдовше слово. «Сухарики» — це і «сухар»
+    (хліб), і «сухарик» (снеки); довше слово точніше.
+    """
     low = (name or "").lower()
+    head = " ".join(low.split()[:2])
     ordered = ([c for c in SILPO_CATEGORIES if c[0] in _MATCH_FIRST]
                + [c for c in SILPO_CATEGORIES if c[0] not in _MATCH_FIRST])
-    for slug, title, words in ordered:
-        if any(w in low for w in words) and not any(x in low for x in _EXCLUDE.get(slug, ())):
-            return slug, title
+    for scope in (head, low):
+        best = None
+        for slug, title, words in ordered:
+            if any(x in low for x in _EXCLUDE.get(slug, ())):
+                continue
+            hit = max((w for w in words if w in scope), key=len, default=None)
+            if hit and (best is None or len(hit) > best[0]):
+                best = (len(hit), slug, title)
+        if best:
+            return best[1], best[2]
     return "inshe", "Інше"
 
 

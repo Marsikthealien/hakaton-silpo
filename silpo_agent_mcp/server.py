@@ -2,7 +2,7 @@
 
 Сирі 40 tools «Сільпо» вимагають branchId, companyId, timeslot і довгих
 ланцюжків — маленька локальна модель на цьому ламається. Тут вона отримує
-16 інструментів рівня сценарію з простими аргументами, а всередині кожного
+інструменти рівня сценарію з простими аргументами, а всередині кожного
 відпрацьовують справжні silpo_*-tools (їх видно через mcp_trace).
 
 Запуск (stdio):  python -m silpo_agent_mcp.server
@@ -19,7 +19,7 @@ try:
 except ImportError:  # pragma: no cover
     from mcp.server.fastmcp import FastMCP as _Server      # mcp 1.x
 
-from . import facade, packs, proposed, weights
+from . import demo, facade, flows, game, insights, packs, proposed, voice, weights
 from .silpo import SilpoError, silpo
 
 mcp = _Server(
@@ -151,6 +151,13 @@ PROPOSED = (
     ("silpo_add_family_recipe", proposed.add_family_recipe),
     ("silpo_get_family_recipes", proposed.family_recipes),
     ("silpo_find_recipes_online", proposed.find_recipe_online),
+    ("silpo_get_swipe_deck", proposed.swipe_deck),
+    ("silpo_get_game_profile", game.game_profile),
+    ("silpo_get_achievements", game.achievements),
+    ("silpo_get_themed_branches", game.themed_branches),
+    ("silpo_claim_level_reward", game.claim_level_reward),
+    ("silpo_get_skins", game.skins),
+    ("silpo_set_skin", game.set_skin),
     ("silpo_get_taste_weights", weights.snapshot),
     ("silpo_bump_taste_weight", weights.bump),
     ("silpo_rebuild_taste_weights", weights.rebuild_from_receipts),
@@ -170,12 +177,44 @@ TOOLS = (
     facade.set_cart_quantity, facade.remove_from_cart, facade.refresh_timeslot,
     facade.find_address, facade.my_perks, facade.expiring, facade.payment_hint, facade.screen_pack,
     facade.set_branch, facade.mcp_trace,
+
+    # Сценарії на бюджет, тиждень, компанію та нагадування
+    facade.budget_pack, facade.weekly_pack, facade.party_pack, facade.reminders,
+    facade.family_pack,
+
+    # Правка пака словами: «прибери пакет», «додай молоко», «заміни чипси»
+    facade.pack_add, facade.pack_remove, facade.pack_set_qty, facade.pack_swap_named,
+
+    # Аналітика — усе на наявних 40 tools, жодного нового не потрібно
+    insights.coupon_audit, insights.coupon_detail, insights.savings_report,
+    insights.spend_report, insights.impulse_check, insights.eco_check,
+    insights.plus_check, insights.popular_now, insights.picking_risk,
+    insights.compare_branches, insights.np_offices, insights.send_to_family,
+    insights.kids_pack, insights.office_pack,
+    insights.certificates, insights.certificate_apply,
+
+    # Грибниця: таблиця рівнів — щоб криву було видно, а не лише обіцяно
+    game.level_table,
+
+)
+
+# Прозорість демо: реєстр сценаріїв і всі дані, які ми імітуємо. Імена задаємо
+# явно — `put` і `reset` у спільному просторі імен модель тлумачить як завгодно.
+TRANSPARENCY = (
+    ("agent_flows", flows.flows),
+    ("demo_data", demo.catalogue),
+    ("demo_set", demo.put),
+    ("demo_reset", demo.reset),
+    ("demo_clear", demo.clear_state),
+    ("voice_status", voice.status),
+    ("voice_list", voice.voices),
+    ("voice_set_key", voice.set_key),
 )
 
 for _fn in TOOLS:
     mcp.add_tool(_safe(_fn))
 
-for _name, _impl in PROPOSED:
+for _name, _impl in PROPOSED + TRANSPARENCY:
     mcp.add_tool(_named(_name, _impl))
 
 

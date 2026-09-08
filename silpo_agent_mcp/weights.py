@@ -52,7 +52,18 @@ def _key(name: str) -> str:
     return " ".join(clean.split()[:2])
 
 
+# Сховище читається на КОЖЕН товар у видачі — без кешу це сотні читань файлу
+# на один пак. Кеш скидається за mtime, тож зовнішня правка файлу помітна.
+_CACHE: dict = {"mtime": None, "data": None}
+
+
 def _load() -> dict:
+    try:
+        mtime = os.path.getmtime(STORE_PATH)
+    except OSError:
+        mtime = None
+    if _CACHE["data"] is not None and _CACHE["mtime"] == mtime:
+        return _CACHE["data"]
     try:
         with open(STORE_PATH, encoding="utf-8") as f:
             data = json.load(f)
@@ -61,6 +72,7 @@ def _load() -> dict:
     data.setdefault("products", {})
     data.setdefault("categories", {})
     data.setdefault("log", [])
+    _CACHE.update({"mtime": mtime, "data": data})
     return data
 
 
@@ -69,6 +81,10 @@ def _save(data: dict) -> None:
     data["log"] = data["log"][-300:]
     with open(STORE_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    try:
+        _CACHE.update({"mtime": os.path.getmtime(STORE_PATH), "data": data})
+    except OSError:
+        _CACHE.update({"mtime": None, "data": data})
 
 
 def bump(name: str, event: str = "purchase", times: float = 1,
@@ -111,6 +127,35 @@ def weight_of(name: str) -> float:
     return round(own + CATEGORY_SHARE * category, 2)
 
 
+def known(name: str) -> bool:
+    """Чи стикався гість із цим товаром узагалі — купував, свайпав, міняв.
+
+    Це не те саме, що «любить»: свайп уліво теж робить товар знайомим. Саме
+    тому «щось нове» і «щось знайоме» — різні осі, а не два кінці однієї.
+    """
+    return _key(name) in _load()["products"]
+
+
+def category_weight_of(name: str) -> float:
+    """Вага полиці, до якої належить товар.
+
+    Потрібна для «щось нове»: серед незнайомого спершу показуємо те, що лежить
+    на полиці, яку гість і так любить. Інакше «нове» вироджується у випадкове.
+    """
+    from .proposed import _aisle_of
+
+    data = _load()
+    row = data["products"].get(_key(name)) or {}
+    slug = row.get("category") or _aisle_of(name)[0]
+    return (data["categories"].get(slug) or {}).get("weight", 0.0)
+
+
+def novelty_note(novelty: str) -> str:
+    return {"new": "шукаю те, чого ти ще не брав — але з полиць, які ти любиш",
+            "familiar": "беру перевірене: те, що вже було в чеках і сподобалось",
+            }.get(novelty, "без обмежень за новизною")
+
+
 def snapshot(limit: int = 12) -> dict:
     """Що агент знає про смаки — у вигляді, зрозумілому людині."""
     data = _load()
@@ -142,12 +187,19 @@ def reset() -> dict:
     return {"reset": True}
 
 
-async def rebuild_from_receipts(limit: int = 10) -> dict:
-    """Будує ваги з нуля за реальними чеками — щоб профіль не був порожнім."""
-    from .facade import _raw_receipts
+async def rebuild_from_receipts(limit: int = 0) -> dict:
+    """Будує ваги з нуля за реальними чеками — щоб профіль не був порожнім.
+
+    Беремо ВСЮ історію, а не перші 10 чеків: `get_my_offline_orders` віддає
+    десять за виклик, зате приймає `offset`. На десяти чеках профіль виходив
+    сліпим — цілих полиць у ньому просто не було.
+    """
+    from .game import all_receipts
 
     reset()
-    orders = await _raw_receipts(limit)
+    orders = await all_receipts()
+    if limit:
+        orders = orders[:limit]
     counted = 0
     for order in orders:
         for line in order.get("products", []):
