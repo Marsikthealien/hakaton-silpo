@@ -3,88 +3,65 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Профіль · Сільпо Pack Agent</title>
+<title>Профіль · Хакатон «Сільпо»</title>
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-<div class="page"><div class="cols profile">
+<div class="shell" id="shell"><main class="main">
+  <div class="appwrap">
+    <div class="appframe flat">
+      <div class="appbar">
+        <a class="iconbtn sm plain" href="/" title="Назад" id="ab-back"></a>
+        <span class="ttl">Профіль</span>
+        <a class="iconbtn sm plain" href="/game" title="Грибниця" id="ab-game"></a>
+      </div>
 
-  <div class="col">
-    <section class="card"><div id="portrait"><div class="muted">Читаю акаунт «Сільпо»…</div></div></section>
+      <div class="pagebody">
+        <div class="cols profile">
+          <div class="col">
+            <section class="card"><div id="portrait"><div class="muted">Читаю акаунт «Сільпо»…</div></div></section>
 
-    <section class="card">
-      <h3>Як підбирати</h3>
-      <label class="toggle">
-        <input type="checkbox" id="bonus" onchange="saveToggle()">
-        <span class="track"></span>
-        <span class="lbl"><b>Пропонувати відразу з бонусами</b>
-          <span>Серед відповідних товарів агент братиме ті, на які діє знижка,
-            мультипак або персональне промо. «Повтори чек» шукатиме акційні аналоги.</span></span>
-      </label>
-    </section>
+            <section class="card">
+              <h3>Як підбирати</h3>
+              <label class="toggle">
+                <input type="checkbox" id="bonus" onchange="saveToggle()">
+                <span class="track"></span>
+                <span class="lbl"><b>Пропонувати відразу з бонусами</b>
+                  <span>Серед відповідних товарів агент братиме ті, на які діє знижка,
+                    мультипак або персональне промо. Діє на всі сценарії.</span></span>
+              </label>
+            </section>
+          </div>
 
-    <section class="card">
-      <h3>Чого тобі не можна</h3>
-      <p class="soft" style="margin:0 0 9px">«Сільпо» зберігає дієти, але не алергії —
-        у «Просторі вподобань» такого поля немає. Це памʼятаємо ми.</p>
-      <input id="allergies" placeholder="горіхи, лактоза" onchange="saveAllergies()">
-      <div class="chips" id="allergy-tags" style="margin-top:10px"></div>
-    </section>
+          <div class="col">
+            <!-- Усе про смаки й обмеження — в одному місці й за іконками.
+                 Раніше це були пʼять карток на різній висоті. -->
+            <section class="card">
+              <div class="head"><div class="t"><h2>Смаки й обмеження</h2>
+                <div class="soft">Те, чим агент керується під час підбору. Дієти — з акаунта
+                  «Сільпо», решта — наша: у MCP таких полів немає</div></div></div>
+              <div class="iconrow" id="prefs-tiles"></div>
 
-    <section class="card">
-      <h3>Техніка на кухні</h3>
-      <p class="soft" style="margin:0 0 9px">Рецепти, які вимагають того, чого в тебе немає,
-        не пропонуватимуться.</p>
-      <div class="chips" id="equip"></div>
-    </section>
+              <h3 style="margin-top:20px">Департамент дивинок</h3>
+              <p class="soft" style="margin:0 0 10px">Свайп вправо — в «Обране» «Сільпо».
+                Свайп уліво памʼятаємо ми: в API місця для відмови немає. Кожен свайп
+                рухає вагу товару <b>і його полиці</b></p>
+              <div id="deck"><button class="go" onclick="loadDeck($('#deck'))">Почати</button></div>
+            </section>
+
+            <section class="card">
+              <div class="head"><div class="t"><h2>Останні чеки</h2>
+                <div class="soft">Джерело всього: досвіду, звичок, циклів і аналітики</div></div></div>
+              <div id="receipts" class="muted">—</div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <div id="nav"></div>
+    </div>
   </div>
-
-  <div class="col">
-    <section class="card">
-      <div class="head"><div class="t"><h2>Вподобання</h2>
-        <div class="soft">Змінюються словами в чаті — агент оновить профіль сам</div></div>
-        <a class="go ghost" href="/" style="text-decoration:none">Відкрити чат</a></div>
-      <h3>Люблю</h3><div class="chips" id="likes"></div>
-      <h3>Не люблю</h3><div class="chips" id="dislikes"></div>
-      <h3>Дієти з акаунта «Сільпо»</h3><div class="chips" id="diets"></div>
-      <h3>Запамʼятані факти</h3><div id="facts" class="muted">—</div>
-    </section>
-
-    <section class="card">
-      <div class="head"><div class="t"><h2>Моя сімʼя</h2>
-        <div class="soft">Склад — із «Сільпо». Смаки кожного MCP поки не віддає</div></div></div>
-      <div id="family" class="muted">—</div>
-    </section>
-
-    <section class="card">
-      <div class="head"><div class="t"><h2>Департамент дивинок</h2>
-        <div class="soft">Свайп вправо — в «Обране» «Сільпо». Свайп уліво памʼятаємо ми:
-          в API місця для відмови немає</div></div></div>
-      <div id="deck"><button class="go" onclick="loadDeck($('#deck'))">Почати</button></div>
-    </section>
-
-    <section class="card">
-      <div class="head"><div class="t"><h2>Ваги смаку</h2>
-        <div class="soft">Росте від покупок і свайпів вправо, падає від замін і свайпів
-          уліво. Відʼємна вага — мʼяка нелюбов, не алергія</div></div>
-        <button class="go ghost" onclick="rebuildWeights()">Перерахувати з чеків</button></div>
-      <div id="weights" class="muted">—</div>
-    </section>
-
-    <section class="card">
-      <div class="head"><div class="t"><h2>Джерела даних</h2>
-        <div class="soft">Кожен — окремий MCP збоку застосунку-джерела. «Сільпо» не знає,
-          що ти не спав; трекер не знає про твою алергію. Зшиває агент</div></div></div>
-      <div id="connectors" class="muted">—</div>
-    </section>
-
-    <section class="card">
-      <h2>Останні чеки</h2>
-      <div id="receipts" class="muted">—</div>
-    </section>
-  </div>
-
-</div></div>
+</main></div>
 
 <dialog id="picker"><div id="picker-body"></div></dialog>
 <dialog id="quiz"><div id="quiz-body"></div></dialog>
@@ -93,106 +70,260 @@
 <script>
 const EQUIP = ['сковорідка','каструля','духовка','аерогриль','мікрохвильовка',
                'блендер','тостер','мультиварка','гриль'];
-let PROFILE = {};
+let PROFILE = {}, FACTS = [], FAMILY = null, ME = null, WEIGHTS = null, CONN = null;
 const tags = (list, cls='') => (list||[]).length
   ? list.map(x => `<span class="tag ${cls}">${x}</span>`).join('')
   : '<span class="soft">порожньо</span>';
+const csv = s => s.split(',').map(x => x.trim()).filter(Boolean);
 
 async function loadPortrait(){
   const me = await api('/api/me');
   if(bad(me)) return;
+  ME = me;
   const r = me.receipts || {};
-  const habits = (me.habits||[]).map(h =>
-    `<div class="habit"><b>${h.name}</b> бере ${h.times} р. · цикл ~${h.cycle_days} дн.
-      ${h.due ? `<span class="due">минуло ${h.days_since} — пора</span>` : ''}</div>`).join('');
+  const g = await api('/api/game');
   $('#portrait').innerHTML = `
     <div class="who"><div class="ava">${(me.name||'?')[0]}</div>
-      <div><div class="nm">${me.name||'Гість'}</div>
-        <div class="muted">«${me.card||'—'}» · ${uah(me.bonuses_uah)} балобонусів</div></div></div>
+      <div style="flex:1;min-width:0"><div class="nm">${me.name||'Гість'}</div>
+        <div class="muted">«${me.card||'—'}» · ${uah(me.bonuses_uah)} балобонусів</div></div>
+      ${bad(g) ? '' : `<a class="lvlbadge" href="/game" title="Грибниця: ${g.level} рівень">
+        <span class="n">${g.level}</span><span class="s">${icon('mushroom', 16)}</span></a>`}</div>
     <div class="grid2">
-      <div class="kpi"><b>${uah(r.spent_uah)} ₴</b><span>витрачено за ${r.count||0} чеків</span></div>
+      <div class="kpi"><b>${uah(r.spent_uah)} ₴</b><span>за ${r.count||0} чеків</span></div>
       <div class="kpi good"><b>${uah(r.saved_uah)} ₴</b><span>зекономлено на знижках</span></div>
       <div class="kpi"><b>${uah(r.avg_check_uah)} ₴</b><span>середній чек</span></div>
       <div class="kpi"><b>${(me.habits||[]).length}</b><span>звичок розпізнано</span></div>
     </div>
-    <p class="soft" style="margin:10px 0 0">Найчастіше: ${r.favourite_shop||'—'}</p>
-    ${habits ? `<h3>Що ти береш регулярно</h3>${habits}` : ''}`;
-  $('#diets').innerHTML = tags(me.diets_from_silpo);
+    <p class="soft" style="margin:10px 0 0">Найчастіше: ${r.favourite_shop||'—'}</p>`;
+  renderTiles();
 }
 
-async function loadPrefs(){
-  const d = await api('/api/preferences');
-  PROFILE = d.profile || {};
-  $('#likes').innerHTML = tags(PROFILE.likes);
-  $('#dislikes').innerHTML = tags(PROFILE.dislikes);
-  $('#bonus').checked = !!PROFILE.bonus_first;
-  $('#allergies').value = (PROFILE.allergies||[]).join(', ');
-  $('#allergy-tags').innerHTML = tags(PROFILE.allergies, 'stop');
-  ALLERGIES = [...(PROFILE.allergies||[]), ...(PROFILE.dislikes||[])];
-  const have = PROFILE.equipment || [];
-  $('#equip').innerHTML = EQUIP.map(e =>
-    `<button class="fbtn" aria-pressed="${have.includes(e)}" onclick="toggleEquip('${e}')">${e}</button>`).join('');
-  $('#facts').innerHTML = (d.facts||[]).length
-    ? d.facts.map(f => `<div class="habit"><b>${f.text}</b>
-        <span class="soft">${f.category||'без категорії'} · ${f.created_at}</span></div>`).join('')
-    : '<span class="soft">Ще нічого не запамʼятав.</span>';
+/* ---------- іконки, що відкривають модалки ---------- */
+function renderTiles(){
+  const allerg = (PROFILE.allergies||[]).length;
+  const likes = (PROFILE.likes||[]).length + (PROFILE.dislikes||[]).length;
+  const equip = (PROFILE.equipment||[]).length;
+  const fam = FAMILY ? (FAMILY.members||[]).length + (FAMILY.pets||[]).length : '·';
+  const habits = ME ? (ME.habits||[]).length : '·';
+  const conn = CONN ? (CONN.connectors||[]).filter(c => c.connected).length : '·';
+  const rows = [
+    ['ban',     'Алергії',        'жорстке виключення', allerg, 'openAllergies()', allerg ? 'warn' : ''],
+    ['heart',   'Вподобання',     'смаки й ваги',       likes,  'openLikes()',     ''],
+    ['family',  'Моя сімʼя',      'склад із «Сільпо»',  fam,    'openFamily()',    ''],
+    ['pan',     'Техніка',        'що є на кухні',      equip,  'openEquip()',     ''],
+    ['cycle',   'Беру регулярно', 'цикл із чеків',      habits, 'openHabits()',    ''],
+    ['brain',   'Памʼять',        'факти з розмов',     FACTS.length, 'openFacts()', ''],
+    ['plug',    'Джерела даних',  'холодильник, трекери', conn, 'openConnectors()', ''],
+  ];
+  $('#prefs-tiles').innerHTML = rows.map(([ic, title, sub, n, act, cls]) => `
+    <button class="tile" onclick="${act}"><span class="em">${icon(ic, 22)}</span>
+      <b>${title}</b><span>${sub}</span>
+      <span class="n ${cls}">${n}</span></button>`).join('');
 }
-async function saveToggle(){
-  await api('/api/profile','POST',{bonus_first: $('#bonus').checked});
-  toast($('#bonus').checked ? 'Тепер спершу шукаю акційне' : 'Підбираю без огляду на акції');
+
+function openAllergies(){
+  sheet('Чого тобі не можна', 'Алергія — не дієта: порушив, і це швидка', `
+    <p class="soft" style="margin:0 0 10px">«Сільпо» зберігає девʼять харчових
+      категорій у «Просторі вподобань», але <b>поля для алергії немає ніде</b> —
+      ні в застосунку, ні на сайті, ні в API. Це памʼятаємо ми.</p>
+    <label>Алергени, через кому</label>
+    <input id="s-allerg" value="${(PROFILE.allergies||[]).join(', ')}" placeholder="горіхи, лактоза">
+    <div class="chips" style="margin-top:10px">${tags(PROFILE.allergies, 'stop')}</div>
+    <h3>Дієти з акаунта «Сільпо»</h3>
+    <div class="chips">${tags(ME && ME.diets_from_silpo)}</div>
+    <p class="soft" style="margin:10px 0 0">Перевірка йде по кореню слова: «мак» не
+      блокує «зі смаком», але блокує «рулет з маком». Складу товару MCP не віддає,
+      тож перед покупкою варто глянути етикетку.</p>
+    <button class="go" style="width:100%;margin-top:12px" onclick="saveAllergies()">Зберегти</button>`);
+}
+async function saveAllergies(){
+  await api('/api/profile','POST',{allergies: csv($('#s-allerg').value), mode:'replace'});
+  closeSheet(); toast('Запамʼятав — цього не запропоную'); loadPrefs();
+}
+
+/* Ваги смаку живуть тут: це той самий смак, лише порахований, а не введений. */
+function likesHtml(){
+  const w = WEIGHTS || {};
+  const maxC = Math.max(1, ...((w.categories||[]).map(c => Math.abs(c.weight))));
+  return `
+    <label>Люблю</label>
+    <input id="s-likes" value="${(PROFILE.likes||[]).join(', ')}" placeholder="паста, суші">
+    <div class="chips" style="margin:8px 0 14px">${tags(PROFILE.likes)}</div>
+    <label>Не люблю</label>
+    <input id="s-dis" value="${(PROFILE.dislikes||[]).join(', ')}" placeholder="гриби">
+    <div class="chips" style="margin-top:8px">${tags(PROFILE.dislikes, 'stop')}</div>
+    <button class="go" style="width:100%;margin-top:12px" onclick="saveLikes()">Зберегти</button>
+
+    <div class="head" style="margin-top:20px"><div class="t">
+      <h3 style="margin:0">Ваги смаку</h3>
+      <div class="soft">Те саме, але пораховане: росте від покупок і свайпів вправо,
+        падає від замін і свайпів уліво. Відʼємна вага — мʼяка нелюбов, не алергія</div></div>
+      <button class="go ghost" onclick="rebuildWeights()">Перерахувати</button></div>
+    <p class="soft" style="margin:0 0 10px">Відстежується товарів: ${w.tracked_products ?? '—'}</p>
+    ${(w.categories||[]).slice(0,8).map(c => `<div class="habit" style="border:0;padding:5px 0">
+      <div style="display:flex;justify-content:space-between;font-size:13px">
+        <span>${c.title}</span><b style="color:${c.weight<0?'var(--red)':'var(--green)'}">
+          ${c.weight > 0 ? '+' : ''}${c.weight}</b></div>
+      <div class="bar" style="margin:4px 0 0"><i style="width:${
+        Math.min(100, Math.abs(c.weight)/maxC*100)}%;background:${
+        c.weight<0?'var(--red)':'var(--green)'}"></i></div></div>`).join('')
+      || '<span class="soft">Порожньо — натисни «Перерахувати».</span>'}
+    ${(w.loved||[]).length ? `<h3>Найвища вага</h3><div class="chips">${
+      w.loved.slice(0,8).map(p => `<span class="tag">${p.name.slice(0,26)}
+        <b style="color:var(--green)">+${p.weight}</b></span>`).join('')}</div>` : ''}
+    ${(w.disliked||[]).length ? `<h3>Оминає</h3><div class="chips">${
+      w.disliked.slice(0,6).map(p => `<span class="tag stop">${p.name.slice(0,26)}
+        <b>${p.weight}</b></span>`).join('')}</div>` : ''}`;
+}
+async function openLikes(){
+  if (!WEIGHTS) WEIGHTS = await api('/api/weights');
+  sheet('Вподобання', 'Мʼякий сигнал: впливає на порядок, але нікого не виключає', likesHtml());
+}
+async function saveLikes(){
+  await api('/api/profile','POST',{likes: csv($('#s-likes').value),
+    dislikes: csv($('#s-dis').value), mode:'replace'});
+  toast('Оновив'); await loadPrefs();
+  sheetReplace('Вподобання', 'Мʼякий сигнал: впливає на порядок, але нікого не виключає', likesHtml());
+}
+async function rebuildWeights(){
+  toast('Перечитую чеки…');
+  const r = await api('/api/weights/rebuild','POST',{});
+  if(bad(r)) return;
+  WEIGHTS = r;
+  toast(`Пораховано з ${r.built_from.receipts} чеків, ${r.built_from.lines} позицій`);
+  sheetReplace('Вподобання', 'Мʼякий сигнал: впливає на порядок, але нікого не виключає', likesHtml());
+}
+
+function openEquip(){
+  const have = PROFILE.equipment || [];
+  sheet('Техніка на кухні', 'Рецепти, які вимагають того, чого в тебе немає, не пропонуються', `
+    <div class="chips">${EQUIP.map(e =>
+      `<button class="fbtn" aria-pressed="${have.includes(e)}"
+        onclick="toggleEquip('${e}')">${e}</button>`).join('')}</div>`);
 }
 async function toggleEquip(item){
   const have = new Set(PROFILE.equipment || []);
   have.has(item) ? have.delete(item) : have.add(item);
   await api('/api/profile','POST',{equipment:[...have], mode:'replace'});
-  toast('Оновив кухню'); loadPrefs();
+  await loadPrefs();
+  const now = PROFILE.equipment || [];
+  sheetReplace('Техніка на кухні',
+    'Рецепти, які вимагають того, чого в тебе немає, не пропонуються',
+    `<div class="chips">${EQUIP.map(e =>
+      `<button class="fbtn" aria-pressed="${now.includes(e)}"
+        onclick="toggleEquip('${e}')">${e}</button>`).join('')}</div>`);
 }
-async function saveAllergies(){
-  const list = $('#allergies').value.split(',').map(s=>s.trim()).filter(Boolean);
-  await api('/api/profile','POST',{allergies:list, mode:'replace'});
-  toast('Запамʼятав — цього не запропоную'); loadPrefs();
-}
-async function loadFamily(){
-  const f = await api('/api/family');
+
+async function openFamily(){
+  const f = FAMILY || (FAMILY = await api('/api/family'));
   if(bad(f)) return;
-  $('#family').innerHTML = f.members.map(m => `
-    <div class="habit"><b>${m.name} <span class="soft">· ${m.role}${m.age ? ', '+m.age+' р.' : ''}</span></b>
-      ${m.known ? `любить: ${(m.likes||[]).join(', ')||'—'} · не можна: ${(m.allergies||[]).join(', ')||'—'}`
-        : '<span style="color:var(--red)">вподобань немає — MCP їх не віддає</span>'}
-      <button class="link" onclick="editMember('${m.id}','${m.name}')">заповнити</button></div>`).join('')
-    + f.pets.map(p => `<div class="habit"><b>${p.name} <span class="soft">· ${p.kind}</span></b>
-        корм додаватиметься автоматично</div>`).join('')
-    + `<p class="soft" style="margin-top:8px">${f.spec}</p>`;
+  sheet('Моя сімʼя', 'Склад — із «Сільпо». Смаки кожного MCP поки не віддає', `
+    ${f.members.map(m => `
+      <div class="habit"><b>${m.name} <span class="soft">· ${m.role}${
+        m.age ? ', ' + m.age + ' р.' : ''}</span></b>
+        ${m.known ? `любить: ${(m.likes||[]).join(', ')||'—'} · не можна:
+          ${(m.allergies||[]).join(', ')||'—'}`
+          : '<span style="color:var(--red)">вподобань немає — MCP їх не віддає</span>'}
+        <button class="link" onclick="editMember('${m.id}','${m.name}')">заповнити</button></div>`).join('')}
+    ${f.pets.map(p => `<div class="habit"><b>${p.name} <span class="soft">· ${p.kind}</span></b>
+        корм додаватиметься автоматично</div>`).join('')}
+    <button class="go" style="width:100%;margin-top:12px" onclick="familyDinnerFromSheet()">
+      Зібрати вечерю на всіх</button>
+    <p class="soft" style="margin:10px 0 0">${f.spec}</p>`);
 }
 function editMember(id, name){
-  $('#quiz-body').innerHTML = `
-    <h2 style="margin:0 0 2px">${name}</h2>
-    <div class="soft">Поки MCP не віддає «Простір вподобань», записуємо в себе.</div>
+  // Модалка з модалки: у шапці зʼявиться «назад» до складу родини.
+  sheet(name, 'Поки MCP не віддає «Простір вподобань», записуємо в себе', `
     <label>Любить</label><input id="m-likes" placeholder="паста, суші">
     <label>Не можна</label><input id="m-all" placeholder="арахіс">
-    <button class="go" style="width:100%;margin-top:12px" onclick="saveMember('${id}')">Зберегти</button>`;
-  quiz.showModal();
+    <button class="go" style="width:100%;margin-top:12px" onclick="saveMember('${id}')">Зберегти</button>`);
 }
 async function saveMember(id){
-  const csv = s => s.split(',').map(x=>x.trim()).filter(Boolean);
   await api('/api/family/member','POST',{member_id:id,
     likes:csv($('#m-likes').value), allergies:csv($('#m-all').value)});
-  quiz.close(); toast('Записав'); loadFamily();
+  FAMILY = null; toast('Записав');
+  SHEETS.pop(); await openFamily();
 }
+async function familyDinnerFromSheet(){
+  closeSheet(); toast('Збираю з поправкою на чиїсь алергії…');
+  const p = await api('/api/pack/family','POST',{theme:'вечеря', max_uah:900});
+  if(bad(p)) return;
+  toast(`${p.name}: ${p.item_count} поз. на ${uah(p.total_uah)} ₴` +
+    ((p.blocked_for_everyone||[]).length ? ` · без ${p.blocked_for_everyone.join(', ')}` : ''));
+  location.href = '/';
+}
+
+function openHabits(){
+  const h = (ME && ME.habits) || [];
+  sheet('Що ти береш регулярно', 'Цикл покупки рахується з дат у чеках, а не питається', `
+    ${h.length ? h.map(x => `
+      <div class="habit"><b>${x.name}</b> бере ${x.times} р. · цикл ~${x.cycle_days} дн.
+        ${x.due ? `<span class="due">минуло ${x.days_since} — пора</span>` : ''}
+        <span class="soft"> · впевненість ${x.confidence}</span></div>`).join('')
+      : '<span class="soft">Замало повторів у чеках.</span>'}
+    <button class="go" style="width:100%;margin-top:12px"
+      onclick="closeSheet();location.href='/'">Зібрати те, що закінчилось →</button>`);
+}
+
+function openFacts(){
+  sheet('Памʼять агента', 'Факти, які агент запамʼятав із розмов', `
+    ${FACTS.length ? FACTS.map(f => `<div class="habit"><b>${f.text}</b>
+      <span class="soft">${f.category||'без категорії'} · ${f.created_at}</span></div>`).join('')
+      : '<span class="soft">Ще нічого не запамʼятав. Скажи щось у чаті — і зʼявиться.</span>'}`);
+}
+
+async function openConnectors(){
+  const d = CONN || (CONN = await api('/api/connectors'));
+  sheet('Джерела даних',
+    '«Сільпо» не знає, що ти не спав; трекер не знає про твою алергію. Зшиває агент', `
+    ${(d.connectors||[]).map(c => `
+      <div class="conn"><div class="ic">${icon(c.icon, 20)}</div>
+        <div class="t"><b>${c.name}</b><span>${c.kind} · ${c.gives}</span></div>
+        <label class="toggle" style="padding:0">
+          <input type="checkbox" ${c.connected?'checked':''}
+            onchange="toggleConn('${c.id}',this.checked)">
+          <span class="track"></span></label></div>`).join('')}
+    <p class="soft" style="margin:10px 0 0">${d.spec || ''}</p>`);
+}
+async function toggleConn(id, on){
+  await api('/api/connect','POST',{source:id, on});
+  CONN = await api('/api/connectors');
+  toast(on ? 'Підключено — дані демонстраційні' : 'Відключено');
+  renderTiles();
+}
+
+async function loadPrefs(){
+  const d = await api('/api/preferences');
+  PROFILE = d.profile || {};
+  FACTS = d.facts || [];
+  $('#bonus').checked = !!PROFILE.bonus_first;
+  ALLERGIES = [...(PROFILE.allergies||[]), ...(PROFILE.dislikes||[])];
+  renderTiles();
+}
+async function saveToggle(){
+  await api('/api/profile','POST',{bonus_first: $('#bonus').checked});
+  toast($('#bonus').checked ? 'Тепер спершу шукаю акційне' : 'Підбираю без огляду на акції');
+}
+
 async function loadReceipts(){
   const d = await api('/api/receipts?limit=10');
-  $('#receipts').innerHTML = (d.receipts||[]).map((c,i) => `
-    <div class="prod"><div class="body">
-      <div class="line"><span class="nm">${c.date} · ${c.shop}</span>
-        <span class="pr">${uah(c.total_uah)} ₴</span></div>
-      <div class="why">${c.item_count} позицій · знижка ${uah(c.discount_uah)} ₴
-        ${c.magic_name ? ` · «${c.magic_name}»` : ''}</div>
-      <div class="why">${(c.items||[]).slice(0,4).join(' · ')}</div>
-      <div style="display:flex;gap:12px">
-        <button class="link" onclick="repeat(${i})">Повторити як пак →</button>
-        ${c.receipt_url ? `<a class="link" style="text-decoration:none"
-           href="${c.receipt_url}" target="_blank" rel="noopener">Оригінал чека →</a>` : ''}
-      </div></div></div>`).join('') || '<span class="soft">Чеків не знайшлось.</span>';
+  const rows = (d.receipts||[]).map((c,i) => `
+    <div class="receipt">
+      <div class="r1"><b>${c.date}</b><span class="sum">${uah(c.total_uah)} ₴</span></div>
+      <div class="shop">${c.shop}</div>
+      <div class="meta">${c.item_count} позицій · знижка ${uah(c.discount_uah)} ₴${
+        c.magic_name ? ` · «${c.magic_name}»` : ''}</div>
+      <div class="items">${(c.items||[]).slice(0,3).join(' · ')}</div>
+      <div class="acts">
+        <button class="go" onclick="repeat(${i})">Повторити як пак</button>
+        ${c.receipt_url ? `<a class="go ghost" style="text-decoration:none"
+           href="${c.receipt_url}" target="_blank" rel="noopener">Оригінал чека ↗</a>` : ''}
+      </div>
+    </div>`).join('');
+  $('#receipts').innerHTML = rows
+    ? rows + `<p class="soft">Показано ${d.count} із ${d.total} чеків — решта теж
+        враховані в досвіді, звичках і аналітиці.</p>`
+    : '<span class="soft">Чеків не знайшлось.</span>';
 }
 async function repeat(i){
   toast('Збираю пак із чека…');
@@ -202,60 +333,15 @@ async function repeat(i){
   location.href = '/';
 }
 
-function bar(w, max){
-  const pct = Math.min(100, Math.abs(w) / (max || 1) * 100);
-  const color = w < 0 ? 'var(--red)' : 'var(--green)';
-  return `<div class="bar" style="margin:4px 0 0"><i style="width:${pct}%;background:${color}"></i></div>`;
-}
-async function loadWeights(){
-  const d = await api('/api/weights');
-  if(bad(d)) return;
-  const maxC = Math.max(1, ...(d.categories||[]).map(c => Math.abs(c.weight)));
-  const maxP = Math.max(1, ...[...(d.loved||[]), ...(d.disliked||[])].map(p => Math.abs(p.weight)));
-  $('#weights').innerHTML = `
-    <p class="soft" style="margin:0 0 10px">Відстежується товарів: ${d.tracked_products}</p>
-    <h3>Категорії</h3>
-    ${(d.categories||[]).slice(0,8).map(c => `<div class="habit" style="border:0;padding:5px 0">
-      <div style="display:flex;justify-content:space-between;font-size:13px">
-        <span>${c.title}</span><b style="color:${c.weight<0?'var(--red)':'var(--green)'}">
-          ${c.weight > 0 ? '+' : ''}${c.weight}</b></div>${bar(c.weight, maxC)}</div>`).join('')
-      || '<span class="soft">Порожньо — натисни «Перерахувати з чеків».</span>'}
-    ${(d.loved||[]).length ? `<h3>Любить</h3><div class="chips">${
-      d.loved.slice(0,10).map(p => `<span class="tag">${p.name.slice(0,30)}
-        <b style="color:var(--green)">+${p.weight}</b></span>`).join('')}</div>` : ''}
-    ${(d.disliked||[]).length ? `<h3>Оминає</h3><div class="chips">${
-      d.disliked.slice(0,8).map(p => `<span class="tag stop">${p.name.slice(0,30)}
-        <b>${p.weight}</b></span>`).join('')}</div>` : ''}
-    <p class="soft" style="margin:10px 0 0">${d.note}</p>`;
-}
-async function rebuildWeights(){
-  toast('Перечитую чеки…');
-  const r = await api('/api/weights/rebuild','POST',{});
-  if(bad(r)) return;
-  toast(`Пораховано з ${r.built_from.receipts} чеків, ${r.built_from.lines} позицій`);
-  loadWeights();
-}
-
-async function loadConnectors(){
-  const d = await api('/api/connectors');
-  $('#connectors').innerHTML = (d.connectors||[]).map(c => `
-    <div class="conn"><div class="ic">${c.icon}</div>
-      <div class="t"><b>${c.name}</b><span>${c.kind} · ${c.gives}</span></div>
-      <label class="toggle" style="padding:0">
-        <input type="checkbox" ${c.connected?'checked':''} onchange="toggleConn('${c.id}',this.checked)">
-        <span class="track"></span></label></div>`).join('')
-    + `<p class="soft" style="margin:9px 0 0">${d.spec}</p>`;
-}
-async function toggleConn(id, on){
-  const r = await api('/api/connect','POST',{source:id, on});
-  toast(on ? 'Підключено — дані демонстраційні' : 'Відключено');
-  loadConnectors();
-}
-
 mountTop('profile');
+$('#nav').innerHTML = appNav('profile');
+$('#ab-back').innerHTML = icon('back', 18);
+$('#ab-game').innerHTML = icon('mushroom', 18);
 (async () => {
-  await Promise.all([loadStatus(), loadPortrait(), loadPrefs(), loadFamily(),
-                     loadConnectors(), loadWeights(), loadReceipts()]);
+  await Promise.all([loadStatus(), loadPrefs()]);
+  await Promise.all([loadPortrait(), loadReceipts()]);
+  [FAMILY, CONN] = await Promise.all([api('/api/family'), api('/api/connectors')]);
+  renderTiles();
 })();
 </script>
 </body>

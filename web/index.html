@@ -3,80 +3,93 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Сільпо Pack Agent</title>
+<title>Хакатон «Сільпо» · асистент</title>
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-<div class="page"><div class="cols main">
 
-  <!-- сценарії — поза «телефоном» -->
-  <div class="col">
-    <section class="card">
-      <div class="head"><div class="t"><h2 style="margin:0">Сценарії</h2>
-        <div class="soft">Та сама фраза, яку сказала б людина</div></div></div>
+<!-- Панелі — колонки сітки, а не накладки: коли вони закриті, робоча область
+     займає всю ширину, коли відкриті — розсовують її. -->
+<div class="shell" id="shell">
+
+  <aside class="side l" id="side-left">
+    <div class="dhead">
+      <div class="t" style="flex:1;min-width:0"><h2>Сценарії</h2>
+        <div class="soft">Та сама фраза, яку сказала б людина</div></div>
+      <button class="iconbtn sm plain" onclick="closePanels()" title="Сховати"></button>
+    </div>
+    <div class="dbody">
       <div class="viewswitch" style="margin-bottom:12px">
         <button data-mode="direct" aria-pressed="true" onclick="setMode('direct')">Напряму</button>
         <button data-mode="llm" aria-pressed="false" onclick="setMode('llm')">Через модель</button>
       </div>
       <p class="soft" id="mode-note" style="margin:0 0 12px"></p>
       <div id="scenarios"></div>
-    </section>
-  </div>
 
-  <!-- застосунок: чат і кошик -->
-  <div class="col">
-    <div id="alerts"></div>
-    <div class="appframe">
-      <div class="appbar">
-        <span class="mushroom"></span>
-        <span class="ttl">Машрум Геннадійович</span>
-        <button class="ico" title="Про асистента" onclick="about()">i</button>
-      </div>
-      <div class="apptabs">
-        <button aria-selected="true" onclick="appTab('chat')">Чат</button>
-        <button aria-selected="false" onclick="appTab('cart')">Кошик</button>
-      </div>
+      <h2 style="margin:22px 0 3px;font-size:16px">Гроші та звички</h2>
+      <p class="soft" style="margin:0 0 12px">Відповідь — одне число з твоїх чеків.
+        Нових tools не треба</p>
+      <div id="insights"></div>
+    </div>
+  </aside>
 
-      <div class="appbody" id="tab-chat">
-        <div id="log"></div>
-        <div class="quicks" id="quicks"></div>
-      </div>
-
-      <div class="appbody" id="tab-cart" hidden><div id="cart" class="muted">—</div></div>
-
-      <div class="appfoot" id="foot-chat">
-        <div class="sendbar">
-          <input id="ask" placeholder="Ваше повідомлення"
-                 onkeydown="if(event.key==='Enter')send()">
-          <button class="send" onclick="send()" title="Надіслати">➤</button>
+  <main class="main">
+    <div class="appwrap">
+      <div class="appframe chat">
+        <div class="appbar">
+          <button class="iconbtn sm plain" id="btn-left" onclick="togglePanel('l')"
+            title="Сценарії" aria-pressed="false"></button>
+          <span class="mushroom"></span>
+          <span class="ttl">Машрум Геннадійович</span>
+          <a class="iconbtn sm plain" href="/game" title="Грибниця" id="ab-game"></a>
+          <a class="iconbtn sm plain" href="/profile" title="Профіль" id="ab-user"></a>
+          <button class="iconbtn sm plain" id="btn-tts" onclick="toggleTts()"
+            title="Озвучувати відповіді" aria-pressed="false"></button>
+          <button class="iconbtn sm plain" title="Про асистента" onclick="about()" id="ab-info">i</button>
+          <button class="iconbtn sm plain" id="btn-right" onclick="togglePanel('r')"
+            title="Кошик «Сільпо»" aria-pressed="false"></button>
         </div>
-        <p class="soft" id="chat-note" style="margin:7px 2px 0"></p>
+
+        <div class="appbody" id="tab-chat">
+          <div id="log"></div>
+          <div class="quicks" id="quicks"></div>
+        </div>
+
+        <div class="appbody" id="tab-cart" hidden><div id="cart" class="muted">—</div></div>
+
+        <div class="appfoot" id="foot-chat">
+          <div class="sendbar">
+            <input id="ask" placeholder="Ваше повідомлення"
+                   onkeydown="if(event.key==='Enter')send()">
+            <button class="send" onclick="send()" title="Надіслати" id="sendbtn"></button>
+          </div>
+          <p class="soft" id="chat-note" style="margin:7px 2px 0"></p>
+        </div>
+
+        <div id="nav"></div>
       </div>
     </div>
+  </main>
 
-    <section class="card" style="margin-top:16px"><div id="pack"></div></section>
-  </div>
-
-  <div class="col">
-    <section class="card mobile-only" style="margin-bottom:16px">
-      <h3>Сценарії</h3>
-      <div id="scenarios-2"></div>
-    </section>
-
-    <section class="card desktop-only">
-      <div class="head"><div class="t"><h2 style="margin:0">Кошик «Сільпо»</h2>
+  <aside class="side r" id="side-right">
+    <div class="dhead">
+      <div class="t" style="flex:1;min-width:0"><h2>Кошик «Сільпо»</h2>
         <div class="soft">Справжній кошик акаунта</div></div>
-        <button class="go ghost" onclick="renderCart($('#cart-side'))">Оновити</button></div>
+      <button class="iconbtn sm plain" onclick="renderCart($('#cart-side'))"
+        title="Оновити" id="cart-refresh"></button>
+      <button class="iconbtn sm plain" onclick="closePanels()" title="Сховати"></button>
+    </div>
+    <div class="dbody">
       <div id="cart-side" class="muted">—</div>
-    </section>
-    <div id="payment" class="desktop-only"></div>
-    <section class="card desktop-only">
-      <h3>Згорають сьогодні</h3>
-      <div id="expiring" class="muted">—</div>
-    </section>
-  </div>
+      <div id="payment" style="margin-top:14px"></div>
+      <section class="card" style="margin-top:14px">
+        <h3>Згорають сьогодні</h3>
+        <div id="expiring" class="muted">—</div>
+      </section>
+    </div>
+  </aside>
 
-</div></div>
+</div>
 
 <dialog id="picker"><div id="picker-body"></div></dialog>
 <dialog id="quiz"><div id="quiz-body"></div></dialog>
@@ -85,73 +98,107 @@
 <script>
 let CHAT = [];
 const QUICKS = ['Повтори останній чек', 'Що в мене закінчилось',
-                'Вечеря на 400 грн', 'Чи влізе кошик у доставку'];
+                'Вечеря на 400 грн', 'Скільки я зекономив'];
+// Підказки міняються, щойно з'явився пак: далі корисніше правити його словами.
+var QUICKS_PACK = ['Прибери пакет', 'Додай молоко', 'Заміни чипси на дешевше',
+                   'Поклади в кошик'];
 
 function appTab(name){
-  ['chat','cart'].forEach(n => $('#tab-'+n).hidden = n !== name);
+  // Вкладок дві: розмова (в ній же паки) і справжній кошик «Сільпо».
+  ['chat','cart'].forEach(t => {
+    const body = $('#tab-' + t);
+    if (body) body.hidden = t !== name;
+  });
   $('#foot-chat').hidden = name !== 'chat';
-  document.querySelectorAll('.apptabs button').forEach((b,i) =>
-    b.setAttribute('aria-selected', (i===0) === (name==='chat')));
-  if(name === 'cart') renderCart($('#cart'));
+  document.querySelectorAll('#nav .appnav button').forEach((b, i) =>
+    b.setAttribute('aria-selected', ['chat','cart'][i] === name));
+  if (name === 'cart') renderCart($('#cart'));
 }
-function bubble(cls, text){
-  const map = {me:'you', it:'bot', tools:'sys'};
-  $('#log').insertAdjacentHTML('beforeend',
-    `<div class="msg ${map[cls] || cls}">${text}</div>`);
-  $('#tab-chat').scrollTop = 1e6;
-}
-function about(){
-  $('#quiz-body').innerHTML = `
-    <h2 style="margin:0 0 8px">Я — Машрум Геннадійович</h2>
-    <p class="muted" style="margin:0 0 10px">У режимі цього розширення допомагаю так:</p>
-    <ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.6">
-      <li>читаю твої чеки й рахую, що вже мало б закінчитись;</li>
-      <li>збираю пак і кладу його у <b>справжній</b> кошик «Сільпо»;</li>
-      <li>дивлюсь, які з твоїх купонів спрацюють саме тут;</li>
-      <li>перевіряю, чи немає в наборі того, що тобі не можна;</li>
-      <li>кажу, скільки бракує до Дольок і до дешевшої доставки.</li>
-    </ul>
-    <p class="soft" style="margin:12px 0 0">Оформлення замовлення завжди підтверджуєш ти.</p>
-    <button class="go" style="width:100%;margin-top:12px" onclick="quiz.close()">Зрозуміло</button>`;
-  quiz.showModal();
-}
-async function send(){
-  const text = $('#ask').value.trim(); if(!text) return;
-  $('#ask').value=''; bubble('me', text); CHAT.push({role:'user', content:text});
-  bubble('it','…');
-  const r = await api('/api/chat','POST',{messages:CHAT});
-  $('#log').lastChild.remove();
-  if(r.tools_used?.length) bubble('tools','→ '+r.tools_used.map(t=>t.name).join(' · '));
-  bubble('it', r.reply || r.error || '—');
-  if(r.reply) CHAT.push({role:'assistant', content:r.reply});
-  if(r.result?.items) renderPack(r.result);
-  else { const d = await api('/api/packs'); if(d.packs?.length) openPack(d.packs[0].id); }
-}
-function quick(text){ $('#ask').value = text; send(); }
 
-async function loadExpiring(){
-  const e = await api('/api/expiring?days=1');
-  const all = [...(e.promos||[]), ...(e.coupons||[])];
-  $('#expiring').innerHTML = all.length
-    ? all.slice(0,6).map((x,i) => ticket({reward:x.reward, text:x.text}, i)).join('')
-    : '<span class="muted">Нічого термінового. Персональні промо оновлюються щотижня.</span>';
+function bubble(who, text){
+  const cls = who === 'me' ? 'you' : who === 'tools' ? 'sys' : 'bot';
+  $('#log').insertAdjacentHTML('beforeend', `<div class="msg ${cls}">${text}</div>`);
+  $('#log').scrollTop = $('#log').scrollHeight;
+  // Вголос ідуть лише відповіді агента: власні репліки гість щойно набрав,
+  // а «→ pack_remove» слухати нема сенсу.
+  if (who === 'it' && text !== '…') speak(text);
+}
+
+async function send(){
+  const text = $('#ask').value.trim();
+  if (!text) return;
+  $('#ask').value = '';
+  bubble('me', text);
+  CHAT.push({role:'user', content:text});
+  bubble('it', '…');
+  const r = await api('/api/chat', 'POST', { messages: CHAT });
+  $('#log').lastElementChild.remove();
+  if (r.error) return bubble('it', r.error);
+  if (r.tools_used?.length)
+    bubble('tools', '→ ' + r.tools_used.map(t => t.name).join(' · '));
+  bubble('it', r.reply || 'Готово.');
+  CHAT.push({role:'assistant', content:r.reply || ''});
+  // Пак додається в ту саму стрічку — під відповіддю агента.
+  if (r.result?.items) renderPack(r.result);
+}
+function quick(q){ $('#ask').value = q; send(); }
+
+async function about(){
+  sheet('Машрум Геннадійович + Pack Agent',
+    'Що саме додано до наявного асистента', `
+    <p>Машрум радить. Ми даємо йому <b>памʼять</b> — портрет гостя з реальних чеків,
+      <b>руки</b> — запис у справжній кошик, і <b>калькулятор</b> — купони, пороги
+      доставки й Дольок.</p>
+    <p class="soft">Усе працює на офіційному <span class="mono">mcp.silpo.ua</span>.
+      Те, чого в MCP немає, позначено окремо — і в стрічці викликів, і в описі сценарію.</p>
+    <div class="grid2" style="margin-top:12px">
+      <a class="kpi" href="/game" style="text-decoration:none;color:inherit">
+        <b>Грибниця</b><span>рівні, скіни, досягнення з сум чеків</span></a>
+      <a class="kpi" href="/tech" style="text-decoration:none;color:inherit">
+        <b>Під капотом</b><span>усі сценарії, виклики MCP і демо-дані</span></a>
+    </div>
+    <p class="soft" style="margin-top:12px">Оформлення замовлення агент не виконує —
+      доводить до кнопки «Оформити» й зупиняється.</p>`);
 }
 
 mountTop('home');
+$('#nav').innerHTML = appNav('chat');
+$('#btn-left').innerHTML = icon('panel', 18);
+$('#btn-right').innerHTML = icon('cart', 18);
+$('#ab-game').innerHTML = icon('mushroom', 18);
+$('#ab-user').innerHTML = icon('user', 18);
+$('#cart-refresh').innerHTML = icon('refresh', 17);
+$('#sendbtn').innerHTML = icon('right', 18);
+ttsInit();
+document.querySelectorAll('.side .dhead .iconbtn:not(#cart-refresh)')
+  .forEach(b => b.innerHTML = icon('close', 17));
+
 (async () => {
-  renderPack(null);
-  renderScenarios($('#scenarios'), $('#scenarios-2'));
   $('#quicks').innerHTML = QUICKS.map(q =>
     `<button onclick="quick('${q}')">${q}</button>`).join('');
   bubble('it', 'Готовий. Питайте.');
-  const s = await loadStatus();
-  $('#mode-note').textContent = s.model_available
-    ? `Модель ${s.model} на звʼязку — повний агентний цикл.`
-    : 'Модель офлайн: вільний текст розбираю правилами й усе одно виконую сценарій.';
-  $('#chat-note').textContent = s.model_available ? ''
+  await Promise.all([loadStatus(), loadAllergies()]);
+  await Promise.all([mountScenarios(), renderCart($('#cart-side')), loadExpiring()]);
+  const s = await api('/api/chat/status');
+  $('#chat-note').textContent = s.available
+    ? `Модель ${s.model}: намір визначає вона.`
     : 'Без моделі намір визначаю за ключовими словами.';
-  await Promise.all([loadAllergies(), loadExpiring(), renderCart($('#cart-side'))]);
+  $('#mode-note').textContent = s.available
+    ? 'Кнопка виконує сценарій напряму; «через модель» — тією самою фразою.'
+    : 'Модель офлайн: вільний текст розбираю правилами й усе одно виконую сценарій.';
 })();
+
+async function loadExpiring(){
+  const e = await api('/api/expiring?days=1');
+  const all = [...(e.coupons || []), ...(e.promos || [])];
+  $('#expiring').innerHTML = all.length
+    ? all.slice(0, 6).map(c => `
+        <div class="ticket"><div class="v" style="background:${c.color || '#2B5CE6'}">
+          ${c.value ?? '•'}</div>
+          <div class="t"><b>${c.about || c.title || '—'}</b>
+            <span>${c.reward || ''}</span></div></div>`).join('')
+    : '<span class="soft">Сьогодні нічого не згорає.</span>';
+}
 </script>
 </body>
 </html>

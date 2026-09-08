@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Шлях · Хакатон «Сільпо»</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="shell" id="shell"><main class="main">
+  <div class="appwrap" style="max-width:620px">
+    <div class="appframe road">
+      <div class="appbar">
+        <a class="iconbtn sm plain" href="/game" title="Назад" id="ab-back"></a>
+        <span class="ttl">Шлях</span>
+        <span class="soft" id="head-sub" style="margin-left:auto;white-space:nowrap"></span>
+      </div>
+
+      <div class="pagebody roadscroll" id="scroll">
+        <p class="soft" style="margin:0 0 4px">Кожен рівень на 16% дорожчий за
+          попередній — тому стежка сама відходить убік. Натисни рівень, щоб забрати
+          нагороду.</p>
+        <div class="road" id="road">—</div>
+      </div>
+
+      <div id="nav"></div>
+    </div>
+  </div>
+</main></div>
+
+<dialog id="picker"><div id="picker-body"></div></dialog>
+<dialog id="quiz"><div id="quiz-body"></div></dialog>
+
+<script src="/app.js"></script>
+<script>
+let GAME = null, LEVELS = null, SCROLLED = false;
+
+async function load(){
+  [GAME, LEVELS] = await Promise.all([api('/api/game'), api('/api/game/levels?upto=40')]);
+  if(bad(GAME) || bad(LEVELS)) return;
+  $('#head-sub').textContent = `${GAME.level} рівень · ${uah(GAME.xp)} ₴ досвіду`;
+  render();
+  if (!SCROLLED) { SCROLLED = true; scrollToCurrent(); }
+}
+
+/* Рівні йдуть зверху вниз від меншого до більшого — як дорога, якою вже пройшов
+   і яка тягнеться далі. Відступ вузла пропорційний ціні рівня, тож геометричну
+   криву видно, а не написано. */
+function render(){
+  const lvl = GAME.level;
+  const claimed = GAME.claimed || {};
+  const ready = new Set((GAME.rewards_ready || []).map(r => r.level));
+  const max = Math.max(...LEVELS.levels.map(l => l.need));
+
+  $('#road').innerHTML = LEVELS.levels.map(l => {
+    const done = l.level <= lvl, now = l.level === lvl;
+    const got = claimed[String(l.level)];
+    const gift = !!l.reward && !got;
+    const canClaim = ready.has(l.level);
+    // Відступ — корінь із частки ціни: лінійно різниця між сусідніми рівнями
+    // непомітна (перші 20 рівнів разом дешевші за 40-й), а так стежка справді
+    // відходить убік і прискорення видно.
+    const x = Math.round(10 + Math.sqrt(l.need / max) * 200);
+    const note = l.skin ? `скін «${l.skin}»`
+      : l.reward ? (got ? `забрано: ${got.code}`
+        : canClaim ? 'нагорода чекає — натисни' : l.reward.title)
+      : (done ? 'пройдено' : 'попереду');
+    return `<div class="lvlrow ${done ? 'done' : 'locked'} ${now ? 'now' : ''}
+        ${gift ? 'gift' : ''}" style="--x:${x}px" id="l${l.level}">
+      <button class="node" onclick="tapLevel(${l.level})"
+        title="${l.level} рівень">${l.level}</button>
+      <div class="txt">
+        <b>${l.level} рівень${now ? ' · ти тут' : ''}</b>
+        <span>${note}</span>
+      </div>
+      <div class="cost">${uah(l.need)} ₴</div>
+    </div>`;
+  }).join('');
+}
+
+function scrollToCurrent(){
+  // Автоскрол на поточний рівень при першому заході, а далі гість гортає сам.
+  // Рахуємо різницею прямокутників, а не через offsetTop: offsetParent тут
+  // залежить від розкладки, і на широкому екрані offsetTop дає число з іншої
+  // системи координат.
+  const target = (location.hash && document.querySelector(location.hash))
+    || document.querySelector('#l' + GAME.level);
+  const box = $('#scroll');
+  if (!target || !box) return;
+  const delta = target.getBoundingClientRect().top - box.getBoundingClientRect().top;
+  box.scrollTop += delta - box.clientHeight / 2 + target.offsetHeight / 2;
+}
+
+async function tapLevel(level){
+  const l = LEVELS.levels.find(x => x.level === level);
+  const got = (GAME.claimed || {})[String(level)];
+  const reachable = level <= GAME.level;
+  if (got) return sheet(`${level} рівень`, l.reward.title, `
+    <div class="rw"><div class="t"><b>${got.title}</b>
+      <span>забрано ${(got.granted_at||'').slice(0,10)}</span></div>
+      <span class="code">${got.code}</span></div>
+    <p class="soft">Код наш: у MCP «Сільпо» немає tool на видачу промокоду за прогрес.
+      Саме його ми й пропонуємо — <span class="mono">silpo_claim_level_reward</span>.</p>`);
+  if (!l.reward) return sheet(`${level} рівень`,
+    reachable ? 'пройдено' : `треба ще ${uah(l.total - GAME.xp)} ₴ покупок`,
+    `<p>Нагороди на цьому рівні немає — вони кожні пʼять.
+      ${l.skin ? `Зате тут відкривається скін <b>«${l.skin}»</b>.` : ''}</p>
+     <p class="soft">Перехід на цей рівень коштує ${uah(l.need)} ₴, а разом від початку —
+       ${uah(l.total)} ₴.</p>`);
+  if (!reachable) return sheet(`${level} рівень`, l.reward.title, `
+    <p>Ще не досягнуто. Треба <b>${uah(l.total - GAME.xp)} ₴</b> покупок —
+      це ${Math.max(1, Math.round((l.total - GAME.xp) / 280))} середніх чеків.</p>
+    <p class="soft">Нагорода: ${l.reward.title} (${l.reward.kind}).</p>`);
+  const r = await api('/api/game/claim','POST',{level});
+  if (bad(r)) return;
+  if (!r.granted) return toast(r.reason || 'Нема чого забирати');
+  sheet('Нагорода твоя', `${level} рівень`, `
+    <div class="rw"><div class="t"><b>${r.granted.title}</b>
+      <span>${r.granted.kind}</span></div>
+      <span class="code">${r.granted.code}</span></div>
+    <p class="soft">${r.note}</p>`);
+  const keep = $('#scroll').scrollTop;
+  await load();
+  $('#scroll').scrollTop = keep;
+}
+
+mountTop('road');
+$('#nav').innerHTML = appNav('profile');
+$('#ab-back').innerHTML = icon('back', 18);
+(async () => { await loadStatus(); await load(); })();
+</script>
+</body>
+</html>

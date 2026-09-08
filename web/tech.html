@@ -3,13 +3,47 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Під капотом · Сільпо Pack Agent</title>
+<title>Під капотом · Хакатон «Сільпо»</title>
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
 <div class="page"><div class="cols two">
 
   <div class="col">
+    <section class="card">
+      <div class="head"><div class="t"><h2>Сценарії й що всередині</h2>
+        <div class="soft" id="flow-sum">—</div></div></div>
+      <div id="flows" class="flowlist muted">—</div>
+      <div id="legend" class="soft" style="margin-top:10px"></div>
+    </section>
+
+    <section class="card">
+      <div class="head"><div class="t"><h2>Демо-дані</h2>
+        <div class="soft">Усе, що агент імітує замість «Сільпо». Правиться тут же —
+          зміна діє одразу, «Скинути» повертає значення з коду</div></div></div>
+      <div id="demo" class="muted">—</div>
+    </section>
+
+    <section class="card">
+      <div class="head"><div class="t"><h2>Накопичений стан</h2>
+        <div class="soft">Файли, які агент наповнює сам. Видалити — щоб перевірити
+          сценарій «з нуля»</div></div></div>
+      <div id="state" class="muted">—</div>
+    </section>
+  </div>
+
+  <div class="col">
+    <section class="card">
+      <div class="head"><div class="t"><h2>Виклики MCP</h2>
+        <div class="muted" id="trace-sum">—</div></div>
+        <label class="soft" style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="live" checked style="width:auto"> наживо</label>
+        <button class="go ghost" onclick="loadCalls()">Оновити</button></div>
+      <p class="soft" style="margin:0 0 8px">Натисни виклик — побачиш, що пішло в
+        <b>input</b> і що повернулось в <b>output</b>.</p>
+      <div id="calls"></div>
+    </section>
+
     <section class="card">
       <h2>Доступ до «Сільпо»</h2>
       <div id="token" class="muted">—</div>
@@ -24,30 +58,39 @@
     </section>
 
     <section class="card">
-      <h2>Ланцюг агента</h2>
-      <div id="chain"></div>
-      <p class="soft" style="margin:10px 0 0">Протокол на всю глибину: модель не знає про HTTP
-        «Сільпо» — вона знає лише MCP.</p>
-    </section>
-
-    <section class="card">
-      <div class="head"><div class="t"><h2>Запропоновані tools</h2>
-        <div class="soft">Реалізовані в нас, щоб сценарії працювали. У трейсі — фіолетові</div></div></div>
-      <div id="proposed" class="muted">—</div>
+      <div class="head"><div class="t"><h2>Голос агента</h2>
+        <div class="soft">Respeecher Space API, українська модель
+          <span class="mono">ua-rt</span>. Без ключа озвучує браузер —
+          голос системний, українського в системі часто немає</div></div></div>
+      <div id="voice" class="muted">—</div>
+      <div class="tokenrow" style="margin-top:10px">
+        <input id="vkey" placeholder="X-API-Key зі space.respeecher.com/api-keys">
+        <button class="go" onclick="saveVoiceKey()">Зберегти</button>
+      </div>
+      <p class="soft" style="margin:9px 0 0">Ключ лягає в
+        <span class="mono">.mcp/respeecher.json</span> — тека в git не потрапляє.
+        Або змінна <span class="mono">RESPEECHER_API_KEY</span>.</p>
     </section>
 
     <section class="card limits">
       <h2>Чого MCP «Сільпо» не дозволяє</h2>
       <p><b>Склад товару.</b> <span class="mono">get_product_details.attributes</span> — країна, ТМ,
-        продавець, БЖУ. Інгредієнтів немає, тож алергени ловимо за назвою.</p>
+        продавець, БЖУ. Інгредієнтів немає, тож алергени ловимо за назвою й OCR етикетки.</p>
       <p><b>Активацію промо.</b> <span class="mono">get_my_promos</span> лише читає.</p>
       <p><b>Спосіб оплати.</b> В <span class="mono">update_shopping_cart</span> немає
         <span class="mono">paymentType</span> — Дольки обирає людина.</p>
       <p><b>Вподобання родини.</b> <span class="mono">get_my_family</span> дає склад, але не смаки.</p>
-      <p><b>Сертифікати.</b> <span class="mono">get_my_certificates</span> відповідає
-        <span class="mono">500 Internal Server Error</span> — схоже на баг на боці «Сільпо».
+      <p><b>Концепцію магазину.</b> <span class="mono">list_branches</span> — місто, адреса,
+        координати. Тем дизайнерських супермаркетів немає.</p>
+      <p><b>Сертифікати — плаваючий збій.</b> <span class="mono">get_my_certificates</span>
+        2 вересня стабільно віддавав <span class="mono">500</span>, 8 вересня —
+        12 викликів поспіль без помилки. Для агента це гірше за поломку: зламане
+        він обходить, а те, що падає зрідка, ловиться лише повтором.
         <button class="link" onclick="checkCerts()">перевірити зараз</button>
         <span id="certs"></span></p>
+      <p><b>Підбір під суму.</b> «Кошик рівно під номінал сертифіката» рахуємо самі:
+        у <span class="mono">find_products_batch</span> немає ані бюджету, ані
+        сортування під цільову суму.</p>
     </section>
 
     <section class="card">
@@ -56,19 +99,127 @@
     </section>
   </div>
 
-  <div class="col">
-    <section class="card">
-      <div class="head"><div class="t"><h2>Виклики MCP</h2>
-        <div class="muted" id="trace-sum">—</div></div>
-        <button class="go ghost" onclick="loadTrace(60)">Оновити</button></div>
-      <div id="trace" class="mono"></div>
-    </section>
-  </div>
-
 </div></div>
+
+<dialog class="sheet" id="sheet2"><div id="sheet2-body"></div></dialog>
+<dialog id="picker"><div id="picker-body"></div></dialog>
+<dialog id="quiz"><div id="quiz-body"></div></dialog>
 
 <script src="/app.js"></script>
 <script>
+let CALLS = [];
+const esc = t => String(t == null ? '' : t)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/* ---------- сценарії з ланцюгами ---------- */
+async function loadFlows(){
+  const f = await api('/api/flows');
+  if(bad(f)) return;
+  $('#flow-sum').textContent =
+    `${f.total} сценаріїв · ${f.steps.real} кроків на офіційних tools, ` +
+    `${f.steps.proposed} на запропонованих, ${f.steps.ours} — наш розрахунок`;
+  $('#flows').innerHTML = f.groups.map(g => {
+    const rows = f.flows.filter(x => x.group === g.id);
+    if (!rows.length) return '';
+    return `<h3 style="margin:14px 0 7px">${g.title}</h3>` + rows.map(x => `
+      <details>
+        <summary><b>${x.title}</b><span class="say">«${x.phrase}»</span></summary>
+        <div class="steps">
+          ${x.steps.map(s => `<div class="step ${s.kind}">
+            <span class="k"></span><span>
+              <code>${s.tool}</code>
+              <span class="nt">${s.note}</span></span></div>`).join('')}
+          <div class="step"><span class="k" style="background:var(--blue)"></span>
+            <span><b>Результат</b><span class="nt">${x.result}</span></span></div>
+        </div>
+      </details>`).join('');
+  }).join('');
+  $('#legend').innerHTML = Object.entries(f.legend).map(([k, v]) =>
+    `<span class="tag"><i style="display:inline-block;width:8px;height:8px;border-radius:50%;
+      margin-right:6px;background:${{real:'var(--green)',proposed:'#7A46D6',
+      ours:'var(--amber)'}[k]}"></i>${v}</span>`).join(' ');
+}
+
+/* ---------- виклики MCP з input/output ---------- */
+async function loadCalls(){
+  const t = await api('/api/trace?limit=80');
+  if(bad(t)) return;
+  CALLS = t.calls || [];
+  const real = CALLS.filter(c => c.kind !== 'proposed').length;
+  $('#trace-sum').textContent =
+    `${t.total} за сеанс · показано ${CALLS.length} (${real} офіційних, ${CALLS.length - real} запропонованих)`;
+  $('#calls').innerHTML = CALLS.slice().reverse().map((c, i) => `
+    <button class="tracerow ${c.kind === 'proposed' ? 'prop' : ''}"
+      onclick="showCall(${CALLS.length - 1 - i})">
+      <span class="nm ${c.ok ? '' : 'bad'}">${c.tool}${c.kind === 'proposed' ? ' ⁺' : ''}</span>
+      <span class="ms">${c.at}</span>
+      <span class="ms">${c.ms} ms</span>
+      <span class="ms">${c.ok ? '›' : '✕'}</span>
+    </button>`).join('') || '<span class="muted">Ще жодного виклику.</span>';
+}
+
+function showCall(i){
+  const c = CALLS[i]; if(!c) return;
+  document.querySelector('#sheet2-body').innerHTML = `
+    <div class="shead"><div class="t" style="flex:1">
+      <h2 class="mono" style="font-size:16px">${c.tool}</h2>
+      <div class="soft">${c.kind === 'proposed'
+        ? 'запропонований tool — у MCP «Сільпо» його немає'
+        : 'офіційний tool mcp.silpo.ua'} · ${c.ms} ms · ${c.at}
+        ${c.note ? ' · ' + c.note : ''}</div></div>
+      <button class="iconbtn sm" onclick="document.querySelector('#sheet2').close()">${icon('close', 17)}</button></div>
+    <div class="sbody io">
+      <h4>Input</h4><pre>${esc(JSON.stringify(c.args, null, 1))}</pre>
+      <h4>Output${c.ok ? '' : ' — помилка'}</h4>
+      <pre>${esc(c.out || '(порожньо)')}</pre>
+    </div>`;
+  document.querySelector('#sheet2').showModal();
+}
+
+/* ---------- редактор демо-даних ---------- */
+async function loadDemo(){
+  const d = await api('/api/demo');
+  if(bad(d)) return;
+  $('#demo').innerHTML = d.sets.map(s => `
+    <div class="demoset">
+      <div class="dh"><b>${s.title}</b>
+        ${s.edited ? '<span class="badge-edit">змінено</span>' : ''}</div>
+      <div class="why">${s.why}</div>
+      <textarea id="d-${s.name}">${esc(JSON.stringify(s.value, null, 2))}</textarea>
+      <div class="acts">
+        <button class="go" onclick="saveDemo('${s.name}')">Застосувати</button>
+        <button class="go ghost" onclick="resetDemo('${s.name}')">Скинути</button>
+        <span class="soft" id="msg-${s.name}"></span>
+      </div>
+    </div>`).join('') + `<p class="soft">${d.note}</p>`;
+  $('#state').innerHTML = d.state_files.map(f => `
+    <div class="call"><span class="n">${f.title}
+        <span class="soft mono" style="font-size:11px">${f.file}</span></span>
+      <span class="ms">${f.exists ? (f.size/1024).toFixed(1) + ' КБ' : 'немає'}</span>
+      <button class="link" onclick="clearState('${f.name}')">видалити</button></div>
+    <div class="soft" style="margin:-4px 0 9px 2px;font-size:12px">${f.about}</div>`).join('');
+}
+async function saveDemo(name){
+  let value;
+  try { value = JSON.parse($('#d-' + name).value); }
+  catch (e) { return ($('#msg-' + name).textContent = 'не JSON: ' + e.message); }
+  const r = await api('/api/demo/set','POST',{name, value});
+  if(bad(r)) return;
+  $('#msg-' + name).textContent = 'застосовано';
+  toast('Демо-дані оновлено — зміна діє одразу');
+  loadDemo();
+}
+async function resetDemo(name){
+  await api('/api/demo/reset','POST',{name});
+  toast('Повернув значення з коду'); loadDemo();
+}
+async function clearState(name){
+  const r = await api('/api/demo/clear','POST',{name});
+  toast(r.removed ? 'Видалив — сценарій почнеться з нуля' : 'Файлу й не було');
+  loadDemo();
+}
+
+/* ---------- доступ, паки ---------- */
 async function loadToken(){
   const t = await api('/api/auth');
   $('#cmd').textContent = t.login_command;
@@ -76,7 +227,6 @@ async function loadToken(){
     <div class="attr"><span>Токен</span><span>…${t.tail}</span></div>
     <div class="attr"><span>Збережено</span><span>${t.saved_at} (${t.age_hours} год тому)</span></div>
     <div class="attr"><span>refresh_token</span><span>${t.has_refresh ? 'є' : 'немає'}</span></div>
-    <div class="attr"><span>OAuth-клієнт</span><span>${t.client_registered ? 'зареєстровано' : '—'}</span></div>
     <div class="attr"><span>Файл</span><span class="mono" style="font-size:11px">${t.path}</span></div>`
     : `<p style="color:var(--red);margin:0">Токена немає. ${t.hint || ''}</p>`;
 }
@@ -84,45 +234,72 @@ async function saveToken(){
   const v = $('#tok').value.trim(); if(!v) return toast('Порожньо');
   const r = await api('/api/auth/token','POST',{access_token:v});
   if(bad(r)) return;
-  $('#tok').value=''; toast('Токен оновлено'); loadToken(); loadChain();
+  $('#tok').value=''; toast('Токен оновлено'); loadToken();
 }
 async function forgetToken(){
   await api('/api/auth/forget','POST',{}); toast('Забув'); loadToken();
 }
 async function checkCerts(){
-  $('#certs').textContent = ' перевіряю…';
-  const r = await api('/api/perks');
-  $('#certs').innerHTML = r.error
-    ? ` <b style="color:var(--red)">досі падає</b>`
-    : ` <b style="color:var(--green)">перевір у трейсі</b>`;
+  // Плаваючий збій ловиться лише серією: один успішний виклик нічого не доводить.
+  $('#certs').textContent = ' перевіряю 5 разів…';
+  let ok = 0, fail = 0;
+  for (let i = 0; i < 5; i++) {
+    const r = await api('/api/certificates');
+    (r.available && !r.error) ? ok++ : fail++;
+  }
+  $('#certs').innerHTML = fail
+    ? ` <b style="color:var(--red)">${fail} із 5 впало</b>`
+    : ` <b style="color:var(--green)">${ok} із 5 успішних</b>`;
 }
-async function loadChain(){
-  const s = await api('/api/status');
-  $('#chain').innerHTML = [
-    [`Qwen (${s.model_available ? s.model : 'офлайн'})`, 'локальна модель', ''],
-    ['MCP · stdio', `${s.mcp_tools} tools із ${(s.servers||[]).join(' + ')}`, ''],
-    ['silpo-agent', 'фасад рівня сценарію + запропоновані tools', ''],
-    ['MCP · streamable HTTP + OAuth', 'mcp.silpo.ua', 'deep'],
-    ['«Сільпо»', `40 tools · ${s.silpo_calls} викликів за сеанс`, 'deep'],
-  ].map(([a,b,c]) => `<div class="step ${c}"><i></i><b>${a}</b><span>${b}</span></div>`).join('');
+/* ---------- голос ---------- */
+async function loadVoice(){
+  const v = await api('/api/voice');
+  const rows = v.has_key ? await api('/api/voice/voices') : null;
+  $('#voice').innerHTML = `
+    <div class="attr"><span>Ключ</span><span>${v.has_key
+      ? `є · ${v.source}` : '<b style="color:var(--amber)">немає — озвучує браузер</b>'}</span></div>
+    <div class="attr"><span>Модель</span><span class="mono" style="font-size:11px">${v.model}</span></div>
+    <div class="attr"><span>Ліміт репліки</span><span>${v.max_chars} символів</span></div>
+    ${rows && rows.available ? `
+      <div class="attr"><span>Голосів</span><span>${rows.count}</span></div>
+      <h3>Обрати голос</h3>
+      <div class="chips">${rows.voices.map(x =>
+        `<button class="fbtn" aria-pressed="${x.id === rows.chosen}"
+          onclick="pickVoice('${x.id}')">${x.id}${x.gender ? ' · ' + x.gender : ''}</button>`
+      ).join('')}</div>
+      <p class="soft" style="margin:9px 0 0">${rows.note}</p>` : ''}
+    ${rows && rows.error ? `<p style="color:var(--red);margin:8px 0 0">${rows.error}</p>` : ''}
+    <button class="go ghost" style="margin-top:10px" onclick="testVoice()">Перевірити голос</button>
+    <span class="soft" id="vtest"></span>`;
 }
-function loadProposed(){
-  const list = [
-    ['silpo_find_recipes','страва → складники, кроки, час і потрібна техніка'],
-    ['silpo_get_product_composition','інгредієнти й декларовані алергени — найважливіший'],
-    ['silpo_also_bought','що беруть у одному чеку з цим товаром'],
-    ['silpo_estimate_delivery','порівняння способів отримання за координатами'],
-    ['silpo_get_family_preferences','смаки й алергії кожного члена родини'],
-    ['silpo_set_member_preferences','запис вподобань учасника родини чи компанії'],
-    ['silpo_record_swipe / get_swipes','памʼять про відмову, а не лише про «Обране»'],
-    ['silpo_select_promos','активувати обрані 1–5 персональних промо'],
-    ['silpo_pantry_sync / pantry_missing','інвентар кухні та чого бракує'],
-    ['silpo_wellbeing_sync','сигнали з фітнес-трекера чи трекера настрою'],
-  ];
-  $('#proposed').innerHTML = list.map(([n,d]) =>
-    `<div class="call"><span class="n mono" style="color:#6B34C9">${n}</span>
-      <span class="ms" style="flex:2;text-align:left;color:var(--muted)">${d}</span></div>`).join('');
+async function saveVoiceKey(){
+  const k = $('#vkey').value.trim();
+  if(!k) return toast('Порожньо');
+  const r = await api('/api/voice/key','POST',{api_key:k});
+  if(bad(r)) return;
+  $('#vkey').value = '';
+  toast(r.has_key ? 'Ключ збережено' : 'Ключ не прийнявся');
+  loadVoice();
 }
+async function pickVoice(id){
+  await api('/api/voice/key','POST',{voice:id});
+  toast(`Голос: ${id}`); loadVoice();
+}
+async function testVoice(){
+  $('#vtest').textContent = ' синтезую…';
+  const r = await fetch('/api/tts', {method:'POST',
+    headers:{'content-type':'application/json'},
+    body: JSON.stringify({text:'Повтори останній чек. Зібрав 4 позиції на 143.94 ₴.'})});
+  if(!r.ok){
+    const e = await r.json().catch(() => ({}));
+    $('#vtest').innerHTML = ` <b style="color:var(--red)">${e.error || r.status}</b>`;
+    return;
+  }
+  const url = URL.createObjectURL(await r.blob());
+  new Audio(url).play();
+  $('#vtest').innerHTML = ' <b style="color:var(--green)">грає</b>';
+}
+
 async function loadPacks(){
   const d = await api('/api/packs');
   $('#packs').innerHTML = (d.packs||[]).slice(0,12).map(p =>
@@ -130,11 +307,12 @@ async function loadPacks(){
       <span class="ms">${p.items} поз. · ${uah(p.total_uah)} ₴</span></div>`).join('')
     || '<span class="muted">Ще жодного.</span>';
 }
+
 mountTop('tech');
 (async () => {
-  loadProposed();
-  await Promise.all([loadStatus(), loadToken(), loadChain(), loadTrace(60), loadPacks()]);
-  setInterval(() => loadTrace(60), 2500);
+  await Promise.all([loadStatus(), loadFlows(), loadDemo(), loadToken(),
+                     loadCalls(), loadPacks(), loadVoice()]);
+  setInterval(() => { if ($('#live').checked) loadCalls(); }, 2500);
 })();
 </script>
 </body>

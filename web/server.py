@@ -14,9 +14,10 @@ from contextlib import asynccontextmanager
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse
+from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Route
 
+from silpo_agent_mcp import voice
 from web import chat as chatmod
 from web.mcp_host import host
 
@@ -24,9 +25,18 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def page(name: str):
-    """Статична сторінка з теки web/."""
+    """Статична сторінка з теки web/.
+
+    `no-store` тут не перестраховка, а виправлення реального збою. FileResponse
+    віддає лише ETag і Last-Modified, без Cache-Control — і браузер застосовує
+    евристичне кешування: бере app.css та app.js зі свого кешу, НЕ перепитуючи
+    сервер. Під час роботи над інтерфейсом це дає найгіршу з можливих картин:
+    свіжий HTML із застарілими стилями й скриптом. Сторінка розсипається, а в
+    консолі порожньо. На демо таке ловити нема коли.
+    """
     async def handler(request: Request):
-        return FileResponse(os.path.join(_HERE, name))
+        return FileResponse(os.path.join(_HERE, name),
+                            headers={"Cache-Control": "no-store, must-revalidate"})
     handler.__name__ = f"page_{name.split('.')[0]}"
     return handler
 
@@ -121,18 +131,9 @@ async def auth_forget(request: Request):
 
 
 async def deck(request: Request):
-    """Колода карток для «Департаменту дивинок»: акційне, ще не відхилене."""
-    seen = {s["product_id"] for s in (await host.call("silpo_get_swipes", {})).get("swipes", [])}
-    sets = await host.call("browse_sets", {})
-    slug = (sets.get("sets") or [{}])[0].get("slug")
-    found = await host.call("search_products", {"queries": ["новинки", "десерт", "снеки"], "limit": 6})
-    cards = []
-    for products in (found.get("results") or {}).values():
-        for item in products:
-            if str(item.get("product_id")) in seen:
-                continue
-            cards.append(item)
-    return ok({"cards": cards[:12], "set": slug, "already_swiped": len(seen)})
+    """Колода «Департаменту дивинок». Логіка живе в MCP-tool, не тут."""
+    limit = int(request.query_params.get("limit", 12))
+    return ok(await host.call("silpo_get_swipe_deck", {"limit": limit}))
 
 
 async def preferences(request: Request):
@@ -160,6 +161,24 @@ async def status(request: Request):
                "model_available": chat_status.get("available")})
 
 
+async def tts_speak(request: Request):
+    """Текст → WAV від Respeecher. Без ключа віддаємо 503, і фронт сам
+    відкочується на браузерний синтез — демо не має падати через це."""
+    payload = await body(request)
+    text = (payload.get("text") or "").strip()
+    if not text:
+        return JSONResponse({"error": "Порожній текст."}, status_code=400)
+    try:
+        audio = await voice.say(text, voice=payload.get("voice"))
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc), "fallback": "browser"}, status_code=503)
+    except Exception as exc:  # noqa: BLE001 — мережа чи ліміт: фронт має знати текст
+        return JSONResponse({"error": f"{type(exc).__name__}: {exc}",
+                             "fallback": "browser"}, status_code=502)
+    return Response(audio, media_type="audio/wav",
+                    headers={"Cache-Control": "no-store"})
+
+
 async def chat_status_route(request: Request):
     state = await chatmod.chat_available()
     state["mcp_tools"] = len(host.tools)
@@ -174,6 +193,8 @@ async def chat_send(request: Request):
 routes = [
     Route("/", page("index.html")),
     Route("/profile", page("profile.html")),
+    Route("/game", page("game.html")),
+    Route("/road", page("road.html")),
     Route("/tech", page("tech.html")),
     Route("/app.css", page("app.css")),
     Route("/app.js", page("app.js")),
@@ -242,9 +263,69 @@ routes = [
     Route("/api/pack/screen", tool_route("screen_pack"), methods=["POST"]),
     Route("/api/payment", tool_route("payment_hint", casts={"pack_total_uah": float}), methods=["POST"]),
     Route("/api/expiring", tool_route("expiring", from_query=("days",), casts={"days": int})),
+    Route("/api/pack/add", tool_route("pack_add", casts={"qty": float}), methods=["POST"]),
+    Route("/api/pack/remove", tool_route("pack_remove"), methods=["POST"]),
+    Route("/api/pack/qty", tool_route("pack_set_qty", casts={"qty": float}), methods=["POST"]),
+    Route("/api/pack/swap_named", tool_route("pack_swap_named"), methods=["POST"]),
     Route("/api/pack/save", tool_route("save_pack"), methods=["POST"]),
     Route("/api/pack/delete", tool_route("delete_pack"), methods=["POST"]),
     Route("/api/pack/to_cart", tool_route("pack_to_cart"), methods=["POST"]),
+
+    # --- прозорість: сценарії та демо-дані ---
+    Route("/api/flows", tool_route("agent_flows")),
+    Route("/api/demo", tool_route("demo_data")),
+    Route("/api/demo/set", tool_route("demo_set"), methods=["POST"]),
+    Route("/api/demo/reset", tool_route("demo_reset"), methods=["POST"]),
+    Route("/api/demo/clear", tool_route("demo_clear"), methods=["POST"]),
+
+    # --- грибниця: рівні, скіни, досягнення ---
+    Route("/api/game", tool_route("silpo_get_game_profile")),
+    Route("/api/game/achievements", tool_route("silpo_get_achievements")),
+    Route("/api/game/themed", tool_route("silpo_get_themed_branches")),
+    Route("/api/game/skins", tool_route("silpo_get_skins")),
+    Route("/api/game/skin", tool_route("silpo_set_skin"), methods=["POST"]),
+    Route("/api/game/claim", tool_route("silpo_claim_level_reward",
+          casts={"level": int}), methods=["POST"]),
+    Route("/api/game/levels", tool_route("level_table",
+          from_query=("upto",), casts={"upto": int})),
+
+    # --- аналітика на наявних 40 tools ---
+    Route("/api/coupons/audit", tool_route("coupon_audit")),
+    Route("/api/coupons/detail", tool_route("coupon_detail",
+          from_query=("business_coupon_id",), casts={"business_coupon_id": int})),
+    Route("/api/savings", tool_route("savings_report")),
+    Route("/api/spend", tool_route("spend_report",
+          from_query=("window_days",), casts={"window_days": int})),
+    Route("/api/impulse", tool_route("impulse_check", from_query=("name",)),
+          methods=["GET", "POST"]),
+    Route("/api/eco", tool_route("eco_check", from_query=("pack_id",)),
+          methods=["GET", "POST"]),
+    Route("/api/plus", tool_route("plus_check")),
+    Route("/api/certificates", tool_route("certificates")),
+    Route("/api/certificates/apply", tool_route("certificate_apply"), methods=["POST"]),
+    Route("/api/popular", tool_route("popular_now")),
+    Route("/api/risk", tool_route("picking_risk"), methods=["GET", "POST"]),
+    Route("/api/compare", tool_route("compare_branches",
+          casts={"limit": int}), methods=["POST"]),
+    Route("/api/np", tool_route("np_offices", from_query=("city", "query"))),
+    Route("/api/reminders", tool_route("reminders",
+          from_query=("horizon_days",), casts={"horizon_days": int})),
+
+    # --- нові пак-сценарії ---
+    Route("/api/pack/budget", scenario_route("budget_pack",
+          {"budget_uah": float, "days": int}), methods=["POST"]),
+    Route("/api/pack/weekly", scenario_route("weekly_pack",
+          {"budget_uah": float}), methods=["POST"]),
+    Route("/api/pack/party", scenario_route("party_pack",
+          {"people": int, "max_uah": float}), methods=["POST"]),
+    Route("/api/pack/kids", scenario_route("kids_pack", {"max_uah": float}),
+          methods=["POST"]),
+    Route("/api/pack/family", scenario_route("family_pack", {"max_uah": float}),
+          methods=["POST"]),
+    Route("/api/pack/office", scenario_route("office_pack",
+          {"people": int, "max_uah": float}), methods=["POST"]),
+    Route("/api/pack/send", scenario_route("send_to_family", {"max_uah": float}),
+          methods=["POST"]),
 
     # --- профіль і памʼять (profile MCP: те, чого немає в акаунті «Сільпо») ---
     Route("/api/profile", tool_route("get_profile")),
@@ -255,6 +336,12 @@ routes = [
     Route("/api/triggers", tool_route("check_triggers")),
     Route("/api/rewards", tool_route("get_rewards")),
     Route("/api/reward", tool_route("grant_reward"), methods=["POST"]),
+
+    # --- голос ---
+    Route("/api/voice", tool_route("voice_status")),
+    Route("/api/voice/voices", tool_route("voice_list")),
+    Route("/api/voice/key", tool_route("voice_set_key"), methods=["POST"]),
+    Route("/api/tts", tts_speak, methods=["POST"]),
 
     # --- чат ---
     Route("/api/chat/status", chat_status_route),

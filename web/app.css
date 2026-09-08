@@ -374,3 +374,353 @@ body.mobile .appframe{border:10px solid #1B2233;border-radius:34px;
 .conn .t{flex:1;min-width:0}
 .conn .t b{display:block;font-size:14px}
 .conn .t span{color:var(--muted);font-size:12px}
+
+/* ===================== Грибниця: рівні, скіни, досягнення ===================== */
+.hero .herogrid{display:grid;grid-template-columns:300px minmax(0,1fr);gap:20px;align-items:center}
+@media(max-width:900px){.hero .herogrid{grid-template-columns:1fr}}
+.myc{position:relative;border-radius:14px;overflow:hidden;
+  background:linear-gradient(180deg,#EDF1FA 0%,#E4E9F6 35.7%,#1A1526 35.7%,#0E0B16 100%)}
+.myc svg{display:block;width:100%;height:auto}
+.myc .cap{position:absolute;top:12px;left:16px;font-size:11.5px;color:var(--soft);
+  letter-spacing:.04em;text-transform:uppercase}
+
+.lvl{display:flex;align-items:center;gap:14px;margin:2px 0 12px}
+.lvl .num{width:62px;height:62px;border-radius:50%;flex:0 0 auto;display:grid;
+  place-items:center;font:800 25px/1 inherit;color:#fff;
+  background:radial-gradient(circle at 34% 28%,#8B6BE8,#4B2FA8);
+  box-shadow:0 6px 18px rgba(75,47,168,.35)}
+.lvl .meta{flex:1;min-width:0}
+.lvl .meta b{font-size:17px;letter-spacing:-.01em}
+.xpbar{height:11px;border-radius:999px;background:#DDE2EE;overflow:hidden;margin:7px 0 5px}
+.xpbar i{display:block;height:100%;border-radius:999px;
+  background:linear-gradient(90deg,#7A46D6,#2B5CE6)}
+
+.ach{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:10px;
+  align-items:start}
+.prize{font-size:11.5px;color:var(--amber);margin-top:6px;font-weight:600;line-height:1.35}
+.ach .a{border:1px solid var(--line);border-radius:14px;padding:12px 13px;background:var(--card)}
+.ach .a.on{border-color:#12805A;background:linear-gradient(180deg,#EAF7F1,#fff)}
+.ach .a .ttl{display:flex;gap:8px;align-items:flex-start}
+.ach .a .ico{font-size:19px;line-height:1.1;flex:0 0 auto}
+.ach .a b{font-size:13.5px;letter-spacing:-.01em;display:block}
+.ach .a .ab{font-size:12px;color:var(--muted);margin-top:3px}
+.ach .a .rw{font-size:11.5px;color:var(--amber);margin-top:6px;font-weight:600}
+.ach .a .pg{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;
+  color:var(--soft);margin-top:8px}
+.ach .a .pg b{white-space:nowrap}
+
+.skins{display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:10px}
+.skin{border:1px solid var(--line);border-radius:14px;padding:12px 10px;text-align:center;
+  background:var(--card);cursor:pointer;font:inherit}
+.skin[disabled]{opacity:.45;cursor:not-allowed;filter:grayscale(1)}
+.skin[aria-pressed="true"]{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue-soft)}
+.skin .shroom{display:block;width:76px;height:auto;margin:0 auto}
+.skin b{display:block;font-size:12.5px;margin-top:9px}
+.skin span{display:block;font-size:11px;color:var(--soft);margin-top:2px}
+
+.rw{display:flex;gap:10px;align-items:center;border:1px dashed var(--amber);
+  border-radius:13px;padding:11px 13px;margin-bottom:8px;background:#FFFBF3}
+.rw .code{font:600 12.5px/1 ui-monospace,Menlo,monospace;background:#fff;
+  border:1px solid var(--line);border-radius:7px;padding:6px 9px;white-space:nowrap}
+.rw .t{flex:1;min-width:0}
+.rw .t b{display:block;font-size:13.5px}
+.rw .t span{font-size:11.5px;color:var(--muted)}
+
+.themed{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:9px}
+.themed .th{border:1px solid var(--line);border-radius:13px;padding:11px 12px}
+.themed .th.on{border-color:var(--green);background:#F1FAF6}
+.themed .th b{font-size:13px;display:block}
+.themed .th span{font-size:11.5px;color:var(--muted);display:block;margin-top:2px}
+.themed .th .mark{float:right;font-size:14px}
+
+/* смуга рівня на сторінці профілю */
+.lvlstrip{display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit}
+.lvlstrip .num{width:46px;height:46px;font-size:18px}
+
+/* згортайки груп сценаріїв */
+.grp{border-bottom:1px solid var(--line);margin-bottom:10px;padding-bottom:4px}
+.grp:last-of-type{border-bottom:0}
+.grp>summary{list-style:none;cursor:pointer;display:flex;flex-direction:column;gap:1px;
+  padding:9px 22px 11px 4px;user-select:none;position:relative}
+.grp>summary::-webkit-details-marker{display:none}
+.grp>summary:after{content:"▸";position:absolute;right:4px;top:11px;
+  color:var(--soft);font-size:12px}
+.grp[open]>summary:after{content:"▾"}
+.grp>summary b{font-size:14px;letter-spacing:-.01em}
+.grp>summary span{font-size:11.5px;color:var(--soft)}
+.grp>summary:hover b{color:var(--blue)}
+
+/* пояснення, чому позиція в паку: без них автоматичному кошику не довіряють */
+.prod .why.because{color:var(--blue)}
+
+/* =========================================================================
+   Переробка макета: сайдбари, модалки, roadmap, нижня навігація
+   ========================================================================= */
+
+/* --- хедер --- */
+.top .in{gap:14px}
+.brand b{font-size:16px;letter-spacing:-.01em}
+.topact{margin-left:auto;display:flex;align-items:center;gap:8px}
+.iconbtn{width:36px;height:36px;border-radius:11px;border:1px solid var(--line);
+  background:var(--card);cursor:pointer;display:grid;place-items:center;
+  font-size:16px;color:var(--muted);text-decoration:none;padding:0;flex:0 0 auto;
+  transition:color .12s,border-color .12s,background .12s}
+.iconbtn:hover{border-color:var(--blue);color:var(--blue)}
+.iconbtn.sm{width:32px;height:32px;border-radius:9px}
+.iconbtn.plain{border-color:transparent;background:transparent}
+.ic{display:block;flex:0 0 auto}
+.iconbtn[aria-pressed="true"]{background:var(--blue-soft);border-color:var(--blue);color:var(--blue)}
+.statedot{width:9px;height:9px;border-radius:50%;background:var(--soft);flex:0 0 auto}
+.statedot.on{background:var(--green)}
+
+/* --- панелі як колонки, а не накладки ---
+   Робоча область займає всю ширину, коли панелі закриті; відкрита панель
+   розсовує сітку, а не лягає поверх із затемненням. Затемнення лишається
+   тільки на мобільному, де місця на колонку немає. */
+.shell{display:grid;grid-template-columns:0 minmax(0,1fr) 0;gap:0;
+  transition:grid-template-columns .2s cubic-bezier(.4,0,.2,1);align-items:stretch}
+.shell.l{grid-template-columns:var(--side) minmax(0,1fr) 0}
+.shell.r{grid-template-columns:0 minmax(0,1fr) var(--side)}
+.shell.l.r{grid-template-columns:var(--side) minmax(0,1fr) var(--side)}
+:root{--side:340px}
+.side{overflow:hidden;background:var(--card);min-width:0;
+  display:flex;flex-direction:column;height:calc(100vh - 58px);position:sticky;top:58px}
+.side.l{border-right:1px solid var(--line)}
+.side.r{border-left:1px solid var(--line)}
+.side .dhead{border-bottom:1px solid var(--line);padding:13px 16px;display:flex;
+  align-items:center;gap:10px;flex:0 0 auto}
+.side .dhead h2{margin:0;font-size:16px;white-space:nowrap}
+.side .dhead .soft{font-size:11.5px}
+.side .dbody{padding:14px 16px 30px;overflow-y:auto;flex:1;min-width:var(--side)}
+/* Робоча область завжди в СЕРЕДНІЙ колонці. Без цього сторінки, де бічних
+   панелей немає (профіль, грибниця, шлях), лягали в нульову першу колонку. */
+.main{grid-column:2;min-width:0;padding:16px 20px 28px}
+
+@media(max-width:1180px){ :root{--side:300px} }
+/* На вузькому екрані й у мобільному вигляді панель знову накладка */
+@media(max-width:900px){
+  .shell,.shell.l,.shell.r,.shell.l.r{grid-template-columns:minmax(0,1fr)}
+  .main{grid-column:1}
+  .side{position:fixed;top:58px;bottom:0;width:min(360px,92vw);z-index:41;
+    height:auto;transform:translateX(-101%);transition:transform .2s}
+  .side.r{right:0;transform:translateX(101%)}
+  .shell.l .side.l,.shell.r .side.r{transform:translateX(0)}
+}
+body.mobile .shell,body.mobile .shell.l,body.mobile .shell.r{grid-template-columns:minmax(0,1fr)}
+body.mobile .main{grid-column:1}
+body.mobile .side{position:fixed;top:58px;bottom:0;width:min(360px,92vw);z-index:41;
+  height:auto;transform:translateX(-101%);transition:transform .2s}
+body.mobile .side.r{right:0;left:auto;transform:translateX(101%)}
+body.mobile .shell.l .side.l,body.mobile .shell.r .side.r{transform:translateX(0)}
+
+.scrim{position:fixed;inset:0;background:rgba(15,23,41,.34);z-index:40;
+  opacity:0;pointer-events:none;transition:opacity .18s}
+.scrim.on{opacity:1;pointer-events:auto}
+
+/* --- ряд іконок, що відкривають модалки --- */
+.iconrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:9px}
+.tile{border:1px solid var(--line);border-radius:14px;background:var(--card);
+  padding:13px 8px 11px;text-align:center;cursor:pointer;font:inherit;color:inherit}
+.tile:hover{border-color:var(--blue)}
+.tile .em{display:flex;justify-content:center;color:var(--blue)}
+.tile b{display:block;font-size:12.5px;margin-top:7px;letter-spacing:-.01em}
+.tile span{display:block;font-size:11px;color:var(--soft);margin-top:2px}
+.tile .n{display:inline-block;min-width:18px;padding:1px 5px;border-radius:999px;
+  background:var(--blue-soft);color:var(--blue);font-size:11px;font-weight:700;margin-top:5px}
+.tile .n.warn{background:#FDEBEF;color:var(--red)}
+
+/* --- модалка --- */
+dialog.sheet{border:0;padding:0;border-radius:18px;width:min(620px,94vw);
+  max-height:86vh;background:var(--card);color:var(--ink);
+  box-shadow:0 30px 80px rgba(15,23,41,.3)}
+dialog.sheet::backdrop{background:rgba(15,23,41,.4)}
+dialog.sheet .shead{position:sticky;top:0;background:var(--card);z-index:2;
+  border-bottom:1px solid var(--line);padding:16px 18px;display:flex;
+  align-items:flex-start;gap:12px}
+dialog.sheet .shead h2{margin:0;font-size:19px}
+dialog.sheet .sbody{padding:16px 18px 20px;overflow-y:auto;max-height:calc(86vh - 66px)}
+
+/* --- чеки: вужчі, вищі, зі справжніми кнопками --- */
+.receipt{border:1px solid var(--line);border-radius:14px;background:var(--card);
+  padding:13px 15px;margin-bottom:9px;max-width:520px}
+.receipt .r1{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.receipt .r1 b{font-size:15px}
+.receipt .r1 .sum{font-weight:700;font-size:15px;white-space:nowrap}
+.receipt .shop{color:var(--muted);font-size:12.5px;margin-top:2px}
+.receipt .meta{color:var(--soft);font-size:12px;margin-top:7px}
+.receipt .items{color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.5}
+.receipt .acts{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}
+.receipt .acts .go{padding:8px 13px;font-size:12.5px}
+
+/* --- нижня навігація застосунку, як у «Сільпо» --- */
+.appnav{display:flex;background:var(--card);border-top:1px solid var(--line);
+  padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
+.appnav button{flex:1;border:0;background:none;cursor:pointer;color:var(--soft);
+  font:600 10.5px/1.2 inherit;font-family:inherit;padding:7px 2px 5px;
+  display:flex;flex-direction:column;align-items:center;gap:4px;border-radius:10px}
+.appnav button .em{display:flex}
+.appnav button[aria-selected="true"]{color:var(--blue)}
+.appnav button[aria-selected="true"] .em{transform:translateY(-1px)}
+
+/* --- roadmap рівнів у стилі Duolingo --- */
+.road{position:relative;padding:18px 0 8px}
+.road .lvlrow{display:flex;align-items:center;gap:14px;position:relative;
+  padding:9px 0;min-height:66px}
+.road .lvlrow:before{content:"";position:absolute;left:calc(var(--x) + 31px);top:-9px;
+  bottom:-9px;width:3px;background:var(--line);border-radius:2px;z-index:0}
+.road .lvlrow:first-child:before{top:50%}
+.road .lvlrow:last-child:before{bottom:50%}
+.road .lvlrow.done:before{background:#8FD9BE}
+.road .node{position:relative;z-index:1;margin-left:var(--x);flex:0 0 auto;
+  width:64px;height:64px;border-radius:50%;border:0;cursor:pointer;
+  display:grid;place-items:center;font:800 19px/1 inherit;color:#fff;
+  background:#C6CDDC;box-shadow:0 5px 0 #A9B2C4;transition:transform .1s}
+.road .node:active{transform:translateY(3px);box-shadow:0 2px 0 #A9B2C4}
+.road .lvlrow.done .node{background:linear-gradient(180deg,#3FBF86,#12805A);box-shadow:0 5px 0 #0C6144}
+.road .lvlrow.now .node{background:linear-gradient(180deg,#8B6BE8,#4B2FA8);box-shadow:0 5px 0 #35208A;
+  outline:4px solid var(--blue-soft)}
+.road .lvlrow.gift .node:after{content:"🎁";position:absolute;top:-6px;right:-6px;
+  font-size:15px;background:#fff;border-radius:50%;padding:2px 3px;
+  box-shadow:0 2px 6px rgba(15,23,41,.2)}
+.road .lvlrow .txt{min-width:0;flex:1}
+.road .lvlrow .txt b{display:block;font-size:13.5px;letter-spacing:-.01em}
+.road .lvlrow .txt span{display:block;font-size:11.5px;color:var(--soft);margin-top:2px}
+.road .lvlrow .cost{font-family:ui-monospace,Menlo,monospace;font-size:12px;
+  color:var(--muted);white-space:nowrap}
+.road .lvlrow.locked .txt b{color:var(--muted)}
+
+/* --- «Під капотом»: flow і трейс --- */
+.flowlist details{border:1px solid var(--line);border-radius:13px;background:var(--card);
+  margin-bottom:8px}
+.flowlist summary{list-style:none;cursor:pointer;padding:12px 14px;display:flex;
+  align-items:center;gap:10px}
+.flowlist summary::-webkit-details-marker{display:none}
+.flowlist summary b{flex:1;font-size:14px}
+.flowlist summary .say{color:var(--muted);font-size:12px;font-style:italic}
+.flowlist .steps{padding:0 14px 13px 14px}
+.flowlist .step{display:flex;gap:10px;padding:7px 0;border-top:1px dashed var(--line)}
+.flowlist .step .k{flex:0 0 auto;width:8px;height:8px;border-radius:50%;margin-top:6px;
+  background:var(--green)}
+.flowlist .step.proposed .k{background:#7A46D6}
+.flowlist .step.ours .k{background:var(--amber)}
+.flowlist .step code{font-size:12.5px;font-weight:600}
+.flowlist .step .nt{display:block;color:var(--muted);font-size:12px;line-height:1.45}
+
+.tracerow{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:10px;
+  cursor:pointer;border:1px solid transparent;font:inherit;width:100%;text-align:left;
+  background:var(--card)}
+.tracerow:hover{border-color:var(--line)}
+.tracerow.prop{background:#F6F1FE}
+.tracerow .nm{flex:1;font-size:13px;font-weight:600;min-width:0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.tracerow .ms{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--soft)}
+.tracerow .bad{color:var(--red)}
+.io{margin-top:10px}
+.io h4{margin:12px 0 5px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--soft)}
+.io pre{margin:0;background:var(--tint);border:1px solid var(--line);border-radius:10px;
+  padding:11px 13px;font-size:12px;line-height:1.5;overflow-x:auto;white-space:pre-wrap;
+  word-break:break-word;max-height:320px;overflow-y:auto}
+
+/* --- редактор демо-даних --- */
+.demoset{border:1px solid var(--line);border-radius:13px;background:var(--card);
+  padding:13px 15px;margin-bottom:10px}
+.demoset .dh{display:flex;align-items:flex-start;gap:10px}
+.demoset .dh b{flex:1;font-size:14px}
+.demoset .why{color:var(--muted);font-size:12.5px;margin:5px 0 9px;line-height:1.5}
+.demoset textarea{width:100%;min-height:150px;border:1px solid var(--line);border-radius:10px;
+  padding:10px 12px;font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--tint);
+  color:var(--ink);resize:vertical}
+.demoset .acts{display:flex;gap:8px;margin-top:9px;align-items:center}
+.badge-edit{background:#FFF4E0;color:var(--amber);border-radius:999px;padding:2px 9px;
+  font-size:11px;font-weight:700}
+
+/* --- каркас головного екрана --- */
+.appframe.chat{height:calc(100vh - 108px);min-height:520px}
+body.mobile .appframe.chat{height:min(80vh,780px)}
+.appbar .iconbtn{margin-left:0}
+.appbar .ttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:820px){ .appwrap{max-width:100%} }
+
+/* --- мобільний фрейм на КОЖНІЙ сторінці, не лише на головній --- */
+body.mobile .main{padding:14px 0 24px;display:flex;justify-content:center}
+body.mobile .appwrap{max-width:424px;width:424px}
+body.mobile .appframe{height:min(80vh,780px)}
+.appframe{background:var(--card);border-radius:20px;overflow:hidden;
+  border:1px solid var(--line);display:flex;flex-direction:column}
+.appwrap{max-width:1180px;margin:0 auto;width:100%}
+.pagebody{flex:1;overflow-y:auto;padding:16px 18px 26px;background:var(--bg)}
+body.mobile .pagebody{padding:14px 15px 22px}
+/* на десктопі сторінка профілю/грибниці не має виглядати телефоном */
+body:not(.mobile) .appframe.flat{border:0;background:transparent;border-radius:0;height:auto}
+body:not(.mobile) .appframe.flat .pagebody{padding:0;background:transparent;overflow:visible}
+body:not(.mobile) .appframe.flat .appnav{display:none}
+body:not(.mobile) .appframe.flat .appbar{display:none}
+
+/* значок рівня в портреті — вхід у грибницю іконкою, а не рядком */
+.lvlbadge{display:flex;align-items:center;gap:7px;text-decoration:none;flex:0 0 auto;
+  background:linear-gradient(180deg,#8B6BE8,#4B2FA8);color:#fff;border-radius:12px;
+  padding:7px 11px 7px 9px;box-shadow:0 4px 12px rgba(75,47,168,.3)}
+.lvlbadge .n{font:800 17px/1 inherit;font-variant-numeric:tabular-nums}
+.lvlbadge .s{display:flex;opacity:.9}
+.lvlbadge:hover{filter:brightness(1.08)}
+.who{align-items:center}
+
+/* --- компактна картка грибниці --- */
+.gamecard{padding:16px 18px}
+.gamecard .lvl{margin:0 0 6px}
+.myc.mini{margin-top:12px;border-radius:12px;
+  background:linear-gradient(180deg,#EDF1FA 0%,#E4E9F6 39%,#1A1526 39%,#0E0B16 100%)}
+.roadlink{display:flex;align-items:center;gap:13px;margin-top:14px;padding:14px 16px;
+  border:1px solid var(--line);border-radius:var(--r);background:var(--card);
+  text-decoration:none;color:inherit}
+.roadlink:hover{border-color:var(--blue)}
+.roadlink .ic{color:var(--blue);display:flex}
+.roadlink .t{flex:1;min-width:0}
+.roadlink .t b{display:block;font-size:15px}
+.roadlink .t span{display:block;font-size:12.5px;color:var(--muted);margin-top:2px}
+
+/* --- сторінка шляху: власний скрол --- */
+.appframe.road{height:calc(100vh - 108px);min-height:520px}
+body.mobile .appframe.road{height:min(80vh,780px)}
+.roadscroll{overflow-y:auto;position:relative}
+.road .lvlrow:first-child:before{top:50%}
+.road .lvlrow:last-child:before{bottom:50%}
+
+/* іконки всередині круглих кнопок */
+.deck-btns button{display:grid;place-items:center}
+.conn .ic{display:grid;place-items:center;color:var(--blue)}
+.themed .th .mark{color:var(--green)}
+.ach .a .ico{color:var(--blue);display:flex;margin-top:1px}
+.ach .a.on .ico{color:var(--green)}
+.sendbar .send{display:grid;place-items:center}
+
+/* Усередині телефона колонки складаються незалежно від ширини вікна:
+   медіазапит дивиться на viewport, а рамка застосунку — лише 424px. */
+body.mobile .cols{grid-template-columns:minmax(0,1fr) !important}
+body.mobile .iconrow{grid-template-columns:repeat(3,minmax(0,1fr))}
+body.mobile .receipt{max-width:100%}
+body.mobile .grid2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+
+/* Закрита колонка має зникати повністю: трек шириною 0 усе одно лишає смужку
+   під смугу прокрутки всередині панелі. На вузькому екрані панель — накладка,
+   тож там вона лишається в потоці й просто виїжджає за край. */
+.shell:not(.l) > .side.l,
+.shell:not(.r) > .side.r{display:none}
+@media(max-width:900px){
+  .shell > .side.l,.shell > .side.r{display:flex}
+}
+body.mobile .shell > .side.l,body.mobile .shell > .side.r{display:flex}
+
+/* --- пак усередині стрічки чату --- */
+.packmsg{background:var(--card);border:1px solid var(--line);border-radius:16px;
+  border-bottom-left-radius:6px;padding:14px 16px;margin:2px 0 10px}
+.packmsg .head{margin-bottom:10px}
+.packmsg .head h2{font-size:17px}
+.packmsg .prod img{width:46px;height:52px}
+.packmsg .total{font-size:15px}
+.packmsg .alerts:empty{display:none}
+/* Попередження належить паку, тож і живе в його картці — на всю ширину сторінки
+   воно виглядало як аварія рівня застосунку, а не як зауваження до набору. */
+.packmsg .warn{margin:12px 0 0;border-radius:12px}
+.msg.sys{margin:0 0 8px}

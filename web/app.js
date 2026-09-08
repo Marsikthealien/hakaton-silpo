@@ -2,7 +2,7 @@
 const $ = s => document.querySelector(s);
 const uah = n => (Math.round((n || 0) * 100) / 100).toLocaleString('uk-UA');
 const TICKET = ['#F43F8E', '#3B82F6', '#F5A524', '#F97316', '#22C55E', '#8B5CF6'];
-let PACK = null, ALLERGIES = [], SEEN = new Set();
+let PACK = null, ALLERGIES = [];
 
 async function api(url, method = 'GET', body) {
   const r = await fetch(url, {
@@ -18,50 +18,314 @@ function toast(text) {
 function bad(data) { if (data && data.error) { toast(data.error); return true; } return false; }
 
 /* ---------- шапка ---------- */
+
+/* ===================== Іконки =====================
+   Лінійний набір 24×24, один stroke, без емоджі: емоджі в кожній системі свої,
+   а половина з них кольорові й ламають ритм інтерфейсу. */
+const ICONS = {
+  panel:    '<path d="M3 5h18v14H3z"/><path d="M9 5v14"/>',
+  cart:     '<path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.4a2 2 0 0 0 2-1.6L20.5 8H6"/><circle cx="10" cy="20" r="1.4"/><circle cx="17.5" cy="20" r="1.4"/>',
+  chat:     '<path d="M21 12a8 8 0 0 1-8 8H4l2-3a8 8 0 1 1 15-5z"/>',
+  receipt:  '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+  user:     '<circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
+  gear:     '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.6M12 18.9v2.6M21.5 12h-2.6M5.1 12H2.5M18.7 5.3l-1.8 1.8M7.1 16.9l-1.8 1.8M18.7 18.7l-1.8-1.8M7.1 7.1 5.3 5.3"/>',
+  pulse:    '<path d="M3 12h4l2.5-7 4 14L16 12h5"/>',
+  close:    '<path d="M6 6l12 12M18 6 6 18"/>',
+  back:     '<path d="M15 5l-7 7 7 7"/>',
+  right:    '<path d="M9 5l7 7-7 7"/>',
+  refresh:  '<path d="M20 11a8 8 0 1 0-.7 4.3"/><path d="M20 5v6h-6"/>',
+  ban:      '<circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/>',
+  heart:    '<path d="M12 20s-7.5-4.7-7.5-9.4A4.1 4.1 0 0 1 12 8a4.1 4.1 0 0 1 7.5 2.6C19.5 15.3 12 20 12 20z"/>',
+  family:   '<circle cx="8" cy="8" r="2.6"/><circle cx="16.5" cy="9.5" r="2"/><path d="M3 19a5 5 0 0 1 10 0M14 19a4 4 0 0 1 7 0"/>',
+  pan:      '<path d="M3.5 10.5h11a3.5 3.5 0 0 1 0 7h-11a3.5 3.5 0 0 1 0-7z"/><path d="M18 14h3.5"/><path d="M6 7.5V5M10 7.5V5"/>',
+  cycle:    '<path d="M4 11a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 13a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/>',
+  brain:    '<path d="M9.5 4.5A3 3 0 0 0 6 7.4 2.8 2.8 0 0 0 4.5 10a2.8 2.8 0 0 0 1 2.2A3 3 0 0 0 7 17a3 3 0 0 0 2.5 2.5z"/><path d="M14.5 4.5A3 3 0 0 1 18 7.4a2.8 2.8 0 0 1 1.5 2.6 2.8 2.8 0 0 1-1 2.2A3 3 0 0 1 17 17a3 3 0 0 1-2.5 2.5z"/><path d="M12 4.3v15.4"/>',
+  plug:     '<path d="M8 3v6M16 3v6"/><path d="M5.5 9h13v2.5a6.5 6.5 0 0 1-13 0z"/><path d="M12 18v3"/>',
+  scales:   '<path d="M12 4v16M7 20h10"/><path d="M4 9h16"/><path d="M4 9l-2 5a2.6 2.6 0 0 0 4 0z"/><path d="M20 9l2 5a2.6 2.6 0 0 1-4 0z"/>',
+  trophy:   '<path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4.5a3 3 0 0 0 3 3M17 6h2.5a3 3 0 0 1-3 3"/><path d="M12 14v3M8.5 20h7l-.7-3h-5.6z"/>',
+  mushroom: '<path d="M3.5 11a8.5 8.5 0 0 1 17 0c0 1.2-3.8 2-8.5 2s-8.5-.8-8.5-2z"/><path d="M9.5 13.2c0 3-.5 5-1 6.8h7c-.5-1.8-1-3.8-1-6.8"/>',
+  compass:  '<circle cx="12" cy="12" r="8.5"/><path d="M15.5 8.5 13.6 13.6 8.5 15.5l1.9-5.1z"/>',
+  gift:     '<path d="M3.5 11h17v9h-17z"/><path d="M2.5 7.5h19V11h-19z"/><path d="M12 7.5V20"/><path d="M12 7.5C10.5 4 6.5 4 7 6.4c.4 1.9 3.4 1.5 5 1.1zM12 7.5c1.5-3.5 5.5-3.5 5 -1.1-.4 1.9-3.4 1.5-5 1.1z"/>',
+  map:      '<path d="M9 4 3 6.5v14L9 18l6 2.5 6-2.5v-14L15 6.5z"/><path d="M9 4v14M15 6.5v14"/>',
+  flask:    '<path d="M10 3v6.5L4.8 18a2 2 0 0 0 1.7 3h11a2 2 0 0 0 1.7-3L14 9.5V3"/><path d="M8.5 3h7M8 14h8"/>',
+  spark:    '<path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z"/><path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/>',
+  wallet:   '<path d="M3.5 7.5h17v12h-17z"/><path d="M3.5 7.5 15 4v3.5"/><circle cx="16.5" cy="13.5" r="1.3"/>',
+  moon:     '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>',
+  sun:      '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M21.5 12h-2M4.5 12h-2M18.4 5.6l-1.4 1.4M7 17l-1.4 1.4M18.4 18.4 17 17M7 7 5.6 5.6"/>',
+  leaf:     '<path d="M4 20c0-9 6-15 16-15 0 10-6 15-16 15z"/><path d="M4 20c3-6 7-9 11-10.5"/>',
+  ticket:   '<path d="M3.5 8.5a2 2 0 0 0 0 7v3h17v-3a2 2 0 0 1 0-7v-3h-17z"/><path d="M9.5 6v12"/>',
+  tag:      '<path d="M11 3.5H20v9l-8.5 8.5-9-9z"/><circle cx="16.2" cy="7.8" r="1.4"/>',
+  calendar: '<path d="M3.5 5.5h17v15h-17z"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  swipe:    '<path d="M9 11V5.5a1.7 1.7 0 0 1 3.4 0V12"/><path d="M12.4 11.2a1.6 1.6 0 0 1 3.2 0v1"/><path d="M15.6 12a1.6 1.6 0 0 1 3.2 0v3.5a5.5 5.5 0 0 1-5.5 5.5h-1a4.5 4.5 0 0 1-3.6-1.8L5 15.5a1.7 1.7 0 0 1 2.6-2.1L9 15"/>',
+  sprout:   '<path d="M12 21v-8"/><path d="M12 13C12 8 8.5 5.5 4.5 5.5 4.5 10 8 13 12 13z"/><path d="M12 13c0-3.5 2.6-6 6-6 0 3.5-2.6 6-6 6z"/>',
+  fridge:   '<path d="M5.5 3h13v18h-13z"/><path d="M5.5 10h13M8.5 6.5v2M8.5 13v2.5"/>',
+  heartbeat:'<path d="M3.5 12h4L9 9l2.5 6L14 11l1.5 1h5"/>',
+  sound:    '<path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18 6.5a7.5 7.5 0 0 1 0 11"/>',
+  mute:     '<path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z"/><path d="M16 10l4 4M20 10l-4 4"/>',
+  flower:   '<circle cx="12" cy="12" r="2.4"/><path d="M12 3.5a3 3 0 0 1 0 6 3 3 0 0 1 0-6zM12 14.5a3 3 0 0 1 0 6 3 3 0 0 1 0-6zM20.5 12a3 3 0 0 1-6 0 3 3 0 0 1 6 0zM9.5 12a3 3 0 0 1-6 0 3 3 0 0 1 6 0z"/>',
+};
+
+/* size — у пікселях; клас лишається для кольору через currentColor */
+function icon(name, size = 20, cls = '') {
+  return `<svg class="ic ${cls}" width="${size}" height="${size}" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+    stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+}
+
 function mountTop(current) {
+  // У хедері лише те, що потрібно ГОСТЮ: назва, перемикач вигляду й вихід на
+  // головну. Навігація між екранами живе всередині застосунку, як у «Сільпо».
+  const home = current === 'home';
   document.body.insertAdjacentHTML('afterbegin', `
     <div class="top"><div class="in">
-      <a class="brand" href="/"><span class="dot"></span>
-        <span><b>Pack Agent</b><span>розширення для «Сільпо»</span></span></a>
-      <nav class="nav">
-        <a href="/" ${current === 'home' ? 'aria-current="page"' : ''}>Асистент</a>
-        <a href="/profile" ${current === 'profile' ? 'aria-current="page"' : ''}>Профіль</a>
-        <a class="desktop-only" href="/tech" ${current === 'tech' ? 'aria-current="page"' : ''}>Під капотом</a>
-      </nav>
+      <a class="brand" href="/">
+        <span class="dot"></span>
+        <span><b>${home ? '' : '← '}Хакатон «Сільпо»</b>
+          <span>${{home:'асистент', profile:'профіль', game:'грибниця',
+                   road:'шлях', tech:'під капотом'}[current] || ''}</span></span></a>
       <div class="viewswitch" title="Як показувати клієнтську частину">
         <button onclick="setView('desktop')" aria-pressed="true">Десктоп</button>
         <button onclick="setView('mobile')" aria-pressed="false">Мобільний</button>
       </div>
-      <div class="status" id="status"></div>
+      <div class="topact">
+        <button class="iconbtn sm" id="statebtn" onclick="showState()"
+          title="Стан підключення">${icon('pulse', 18)}</button>
+        <a class="iconbtn sm" href="/tech" title="Під капотом">${icon('gear', 18)}</a>
+      </div>
     </div></div>`);
-  document.body.insertAdjacentHTML('beforeend', '<div class="toast" id="toast"></div>');
+  document.body.insertAdjacentHTML('beforeend',
+    '<div class="toast" id="toast"></div>' +
+    '<dialog class="sheet" id="sheet"><div id="sheet-body"></div></dialog>' +
+    '<div class="scrim" id="scrim" onclick="closePanels()"></div>');
   setView(localStorage.getItem('view') || 'desktop', true);
+}
+
+/* ---------- нижня навігація застосунку ----------
+   Одна на всі екрани: із профілю й грибниці теж має бути видно, де ти. */
+function appNav(current) {
+  const tabs = [
+    ['chat', 'Чат', 'chat', "location.href='/'"],
+    ['cart', 'Кошик', 'cart', "location.href='/'"],
+    ['profile', 'Профіль', 'user', "location.href='/profile'"],
+  ];
+  return `<nav class="appnav">${tabs.map(([id, label, ic, act]) =>
+    `<button aria-selected="${id === current}" onclick="${act}">
+      <span class="em">${icon(ic, 21)}</span>${label}</button>`).join('')}</nav>`;
+}
+
+/* ===================== Озвучення відповідей =====================
+   Через `speechSynthesis` браузера: нуль залежностей, нуль трафіку й жодного
+   аудіо на сервері. Для демо це важливо — асистент, який ГОВОРИТЬ, одразу
+   читається як асистент, а не як форма з кнопками.
+
+   Голоси браузер віддає асинхронно, тому чекаємо `voiceschanged`; якщо
+   українського голосу в системі немає, кажемо про це прямо, а не мовчимо. */
+let TTS = false, TTS_VOICE = null, TTS_REMOTE = false, TTS_AUDIO = null;
+
+function ttsVoices() {
+  return new Promise(resolve => {
+    const got = speechSynthesis.getVoices();
+    if (got.length) return resolve(got);
+    speechSynthesis.addEventListener('voiceschanged',
+      () => resolve(speechSynthesis.getVoices()), { once: true });
+    setTimeout(() => resolve(speechSynthesis.getVoices()), 1200);
+  });
+}
+
+async function ttsInit() {
+  // Два шляхи. Respeecher (українська модель ua-rt) дає справжній український
+  // голос і вміє наголоси; браузерний синтез безкоштовний, але бере системний
+  // голос, а українського в системі часто просто немає. Тому Respeecher —
+  // основний, браузер — запасний, і перемикання відбувається саме.
+  const v = await api('/api/voice');
+  TTS_REMOTE = !!(v && v.has_key);
+  if ('speechSynthesis' in window) {
+    const voices = await ttsVoices();
+    TTS_VOICE = voices.find(x => x.lang === 'uk-UA')
+      || voices.find(x => (x.lang || '').startsWith('uk')) || null;
+  }
+  try { TTS = localStorage.getItem('tts') === '1'; } catch (e) {}
+  syncTtsBtn();
+  return TTS_REMOTE || TTS_VOICE;
+}
+
+function ttsSource() {
+  return TTS_REMOTE ? 'Respeecher, українська модель'
+    : TTS_VOICE ? `браузер · ${TTS_VOICE.name}`
+    : 'браузер · українського голосу в системі немає';
+}
+
+function syncTtsBtn() {
+  const btn = document.querySelector('#btn-tts');
+  if (!btn) return;
+  btn.setAttribute('aria-pressed', String(TTS));
+  btn.innerHTML = icon(TTS ? 'sound' : 'mute', 18);
+  btn.title = TTS ? `Озвучення: ${ttsSource()}` : 'Озвучувати відповіді';
+}
+
+async function toggleTts() {
+  if (!('speechSynthesis' in window))
+    return toast('Браузер не вміє синтез мовлення');
+  TTS = !TTS;
+  try { localStorage.setItem('tts', TTS ? '1' : '0'); } catch (e) {}
+  if (!TTS) speechSynthesis.cancel();
+  syncTtsBtn();
+  if (!TTS) { if (TTS_AUDIO) TTS_AUDIO.pause(); return toast('Озвучення вимкнено'); }
+  if (!TTS_REMOTE && !TTS_VOICE) await ttsInit();
+  toast('Озвучую: ' + ttsSource());
+  speak('Готовий. Питайте.');
+}
+
+/* Текст для вимови ≠ текст для екрана: стрілки, крапки-роздільники й «₴»
+   вголос звучать як сміття. */
+function ttsText(raw) {
+  return String(raw || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/₴/g, ' гривень')
+    .replace(/→|·|↑|↗/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 400);
+}
+
+function ttsStop() {
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  if (TTS_AUDIO) { TTS_AUDIO.pause(); TTS_AUDIO = null; }
+}
+
+function speakLocal(text) {
+  if (!('speechSynthesis' in window)) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'uk-UA';
+  if (TTS_VOICE) u.voice = TTS_VOICE;
+  u.rate = 1.05;
+  speechSynthesis.speak(u);
+}
+
+async function speak(raw) {
+  if (!TTS) return;
+  const text = ttsText(raw);
+  if (!text) return;
+  ttsStop();                     // нова відповідь перебиває попередню
+  if (!TTS_REMOTE) return speakLocal(text);
+  try {
+    // Сирий текст, не почищений: підготовку до вимови робить бекенд —
+    // там і числа словами, і наголоси, які вміє лише українська модель.
+    const r = await fetch('/api/tts', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: raw }),
+    });
+    if (!r.ok) throw new Error('tts ' + r.status);
+    const url = URL.createObjectURL(await r.blob());
+    TTS_AUDIO = new Audio(url);
+    TTS_AUDIO.onended = () => URL.revokeObjectURL(url);
+    await TTS_AUDIO.play();
+  } catch (e) {
+    // Ключ протух, ліміт, мережа — демо не має замовкати через це.
+    TTS_REMOTE = false;
+    syncTtsBtn();
+    speakLocal(text);
+  }
+}
+
+/* ---------- модалка зі стеком ----------
+   Модалка може відкрити модалку (сімʼя → учасник). Стек дає кнопку «назад»,
+   інакше гість вилітає на сторінку й губить контекст. */
+let SHEETS = [];
+function sheet(title, sub, html, opts = {}) {
+  if (!opts._back) SHEETS.push({ title, sub, html });
+  const back = SHEETS.length > 1;
+  document.querySelector('#sheet-body').innerHTML = `
+    <div class="shead">
+      ${back ? `<button class="iconbtn sm plain" onclick="sheetBack()"
+        title="Назад">${icon('back', 18)}</button>` : ''}
+      <div class="t" style="flex:1;min-width:0">
+        <h2>${title}</h2>${sub ? `<div class="soft">${sub}</div>` : ''}</div>
+      <button class="iconbtn sm plain" onclick="closeSheet()"
+        title="Закрити">${icon('close', 18)}</button></div>
+    <div class="sbody">${html}</div>`;
+  const dlg = document.querySelector('#sheet');
+  if (!dlg.open) dlg.showModal();
+}
+function sheetBack() {
+  SHEETS.pop();
+  const prev = SHEETS[SHEETS.length - 1];
+  if (!prev) return closeSheet();
+  sheet(prev.title, prev.sub, prev.html, { _back: true });
+}
+function closeSheet() {
+  SHEETS = [];
+  document.querySelector('#sheet')?.close();
+}
+/* Перемалювати верхню модалку — коли її вміст змінився (напр. після збереження) */
+function sheetReplace(title, sub, html) {
+  SHEETS.pop();
+  sheet(title, sub, html);
+}
+
+/* ---------- бічні панелі ---------- */
+function togglePanel(side) {
+  const shell = document.querySelector('#shell');
+  if (!shell) return;
+  const on = !shell.classList.contains(side);
+  shell.classList.remove('l', 'r');
+  shell.classList.toggle(side, on);
+  syncPanels();
+}
+function closePanels() {
+  document.querySelector('#shell')?.classList.remove('l', 'r');
+  syncPanels();
+}
+function syncPanels() {
+  const shell = document.querySelector('#shell');
+  if (!shell) return;
+  const open = shell.classList.contains('l') || shell.classList.contains('r');
+  const overlay = window.matchMedia('(max-width:900px)').matches ||
+    document.body.classList.contains('mobile');
+  document.querySelector('#scrim')?.classList.toggle('on', open && overlay);
+  document.querySelector('#btn-left')?.setAttribute('aria-pressed', shell.classList.contains('l'));
+  document.querySelector('#btn-right')?.setAttribute('aria-pressed', shell.classList.contains('r'));
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanels(); });
+
+async function showState() {
+  const s = await api('/api/status');
+  sheet('Стан підключення', 'Технічні лічильники — щоб не займали хедер', `
+    <div class="grid2">
+      <div class="kpi"><b>${s.mcp_tools}</b><span>MCP-tools доступно агенту</span></div>
+      <div class="kpi"><b>${s.silpo_calls}</b><span>викликів «Сільпо» за сеанс</span></div>
+      <div class="kpi ${s.model_available ? 'good' : ''}"><b>${s.model_available ? 'онлайн' : 'офлайн'}</b>
+        <span>${s.model || 'модель'}</span></div>
+      <div class="kpi"><b>${(s.servers || []).length}</b><span>MCP-серверів: ${(s.servers||[]).join(', ')}</span></div>
+    </div>
+    <p class="soft" style="margin:12px 0 0">${s.model_available
+      ? 'Вільний текст обробляє локальна модель.'
+      : 'Модель офлайн — намір розбирається за ключовими словами. Сценарії працюють однаково.'}</p>
+    <a class="go ghost" href="/tech" style="margin-top:12px;display:inline-block;
+      text-decoration:none">Відкрити «Під капотом» →</a>`);
 }
 
 /* Мобільний вигляд — той самий застосунок у рамці телефона.
    «Під капотом» у ньому не показуємо: це екран для команди, не для гостя. */
 function setView(mode, silent) {
+  // Кошик один: і на десктопі, і на мобільному він усередині застосунку.
+  // Різниця лише в тому, що на десктопі його можна тримати в правій панелі.
   document.body.classList.toggle('mobile', mode === 'mobile');
-  // Кошик має бути один: на мобільному він усередині застосунку, на десктопі —
-  // бічною панеллю, як на silpo.ua. Інакше на екрані два однакові списки.
-  const tab = document.querySelector('.apptabs');
-  if (tab) {
-    tab.hidden = mode !== 'mobile';
-    if (mode !== 'mobile' && typeof appTab === 'function') appTab('chat');
-  }
-  const left = document.querySelector('#scenarios');
-  if (left) renderScenarios(left, document.querySelector('#scenarios-2'));
   document.querySelectorAll('.viewswitch button').forEach((b, i) =>
     b.setAttribute('aria-pressed', (i === 0) === (mode !== 'mobile')));
   try { localStorage.setItem('view', mode); } catch (e) {}
+  syncPanels();
   if (mode === 'mobile' && location.pathname === '/tech' && !silent) location.href = '/';
 }
 async function loadStatus() {
+  // Стан лишається доступним, але в хедері від нього — лише крапка.
+  // Числа відкриваються в модалці: на демо вони не мають конкурувати з фічами.
   const s = await api('/api/status');
-  $('#status').innerHTML = `
-    <span class="pill">MCP-tools <b>${s.mcp_tools}</b></span>
-    <span class="pill hot">викликів «Сільпо» <b id="calls">${s.silpo_calls}</b></span>
-    <span class="pill">модель <b>${s.model_available ? s.model : 'офлайн'}</b></span>`;
+  const btn = $('#statebtn');
+  if (btn) {
+    btn.title = `MCP-tools ${s.mcp_tools} · викликів «Сільпо» ${s.silpo_calls}` +
+      ` · модель ${s.model_available ? s.model : 'офлайн'}`;
+  }
   return s;
 }
 
@@ -74,22 +338,20 @@ async function loadAllergies() {
 }
 
 /* ---------- картка пака ---------- */
-function renderPack(p) {
-  const box = $('#pack'); if (!box) return;
-  if (!p || p.error) {
-    box.innerHTML = `<h2>Пак ще не зібрано</h2>
-      <p class="muted" style="margin:0">Натисни сценарій ліворуч або попроси словами —
-        агент збере набір із реальних товарів «Сільпо».</p>`;
-    return;
-  }
+/* Пак живе в СТРІЧЦІ ЧАТУ, а не в окремій вкладці: інакше кожен новий набір
+   стирав розмову, і не було видно, що з чого вийшло. Тому renderPack повертає
+   розмітку, а куди її покласти — вирішує сторінка. */
+function packHtml(p) {
   PACK = p;
   const src = { receipt: 'відтворено з чека', habits: 'зі звичок', silpo_set: 'із набору «Сільпо»',
                 agent: 'зібрано агентом' }[p.source] || p.source;
-  box.innerHTML = `
+  return `
     <div class="head"><div class="t">
       <h2>${p.name}</h2>
       <div class="soft">${src} · ${p.item_count} позицій${
-        p.receipt ? ` · в оригіналі ${uah(p.receipt.paid_uah)} ₴` : ''}</div></div>
+        p.receipt ? ` · в оригіналі ${uah(p.receipt.paid_uah)} ₴` : ''}${
+        p.people ? ` · на ${p.people} осіб` : ''}${
+        p.novelty && p.novelty !== 'any' ? ` · ${p.novelty === 'new' ? 'щось нове' : 'щось знайоме'}` : ''}</div></div>
       <button class="go ghost" onclick="optimize()">Знижки</button>
       <button class="go" onclick="toCart()">У кошик «Сільпо»</button></div>
     ${p.recipe ? `<div class="recipe"><b>${p.recipe.title}</b>
@@ -100,7 +362,10 @@ function renderPack(p) {
         <div class="body">
           <div class="line"><span class="nm">${i.name}</span>
             <span class="pr">${i.old_price ? `<span class="old">${uah(i.old_price)}</span>` : ''}${uah(i.price)} ₴</span></div>
-          ${i.qty !== 1 ? `<div class="why">× ${i.qty}</div>` : ''}
+          ${i.scaled ? `<div class="why">${i.scaled}</div>`
+            : (i.qty !== 1 ? `<div class="why">× ${i.qty}</div>` : '')}
+          ${i.because ? `<div class="why because">${i.because}</div>` : ''}
+          ${i.novelty_relaxed ? `<div class="why">знайомого в бюджеті не було — взяв незнайоме</div>` : ''}
           ${i.swapped_from ? `<div class="why swap">замість «${i.swapped_from}» — не було в магазині</div>` : ''}
           ${i.note ? `<div class="why">${i.note}</div>` : ''}
           <span style="display:flex;gap:12px;flex-wrap:wrap">
@@ -110,9 +375,41 @@ function renderPack(p) {
         </div></div>`).join('')}
     <div class="total"><span>Разом</span><span>${uah(p.total_uah)} ₴</span></div>
     ${p.saved_uah > 0 ? `<div class="saved">знижка ${uah(p.saved_uah)} ₴</div>` : ''}
+    ${(p.blocked_for_everyone || []).length ? `<div class="soft" style="margin-top:8px">
+      Виключено для всієї родини: <b>${p.blocked_for_everyone.join(', ')}</b> —
+      алергія будь-кого блокує товар для всього кошика.</div>` : ''}
     ${(p.skipped || []).length ? `<div class="soft" style="margin-top:8px">Не додав:
       ${p.skipped.map(s => `${s.query} — ${s.reason}`).join(' · ')}</div>` : ''}
+    ${p.why ? `<div class="soft" style="margin-top:8px">${p.why}</div>` : ''}
     <div id="offers"></div>`;
+}
+
+/* Пак у стрічку чату. Попередній пак згортаємо до рядка — історія лишається
+   читаною, а на екрані завжди один розгорнутий набір. */
+function renderPack(p) {
+  if (!p || p.error) return;
+  const log = $('#log');
+  if (log) {
+    log.querySelectorAll('.packmsg').forEach(el => {
+      const name = el.dataset.name || 'Пак';
+      const sum = el.dataset.total || '';
+      el.outerHTML = `<div class="msg sys">↑ ${name}${sum ? ' · ' + sum + ' ₴' : ''}
+        — замінено новим набором</div>`;
+    });
+    log.insertAdjacentHTML('beforeend',
+      `<div class="packmsg" data-name="${p.name}" data-total="${uah(p.total_uah)}">
+         ${packHtml(p)}<div class="alerts" id="alerts"></div></div>`);
+    log.scrollTop = log.scrollHeight;
+    // `const` на верхньому рівні скрипта не стає властивістю window, тому
+    // перевіряємо typeof, а не window.QUICKS_PACK.
+    const quicks = $('#quicks');
+    if (quicks && typeof QUICKS_PACK !== 'undefined')
+      quicks.innerHTML = QUICKS_PACK.map(q =>
+        `<button onclick="quick('${q}')">${q}</button>`).join('');
+  } else {
+    const box = $('#pack');
+    if (box) box.innerHTML = packHtml(p);
+  }
   screenAllergens(); payment();
 }
 
@@ -150,6 +447,8 @@ async function swapTo(oldId, newId) {
 
 /* ---------- алергени, Дольки, знижки, кошик ---------- */
 async function screenAllergens() {
+  // Блок алергенів належить конкретному паку, тож і живе в його картці —
+  // а не смугою на всю сторінку понад застосунком.
   const box = $('#alerts'); if (!box) return;
   if (!ALLERGIES.length || !PACK) { box.innerHTML = ''; return; }
   const s = await api('/api/pack/screen', 'POST', { pack_id: PACK.id, avoid: ALLERGIES });
@@ -240,87 +539,68 @@ async function addByName(name) {
   renderPack(p);
 }
 
-/* ---------- трейс ---------- */
-async function loadTrace(limit = 30) {
-  const t = await api('/api/trace?limit=' + limit);
-  const sum = $('#trace-sum'); if (sum) sum.textContent = `${t.total} за сеанс`;
-  const calls = $('#calls'); if (calls) calls.textContent = t.total;
-  const box = $('#trace'); if (!box) return;
-  box.innerHTML = (t.calls || []).slice().reverse().map(c => {
-    const key = c.at + c.tool + c.ms, fresh = SEEN.has(key) ? '' : ' fresh'; SEEN.add(key);
-    const prop = c.kind === 'proposed';
-    return `<div class="call${c.ok ? '' : ' bad'}${fresh}"><span class="t">${c.at}</span>
-      <span class="n" ${prop ? 'style="color:#6B34C9"' : ''}>${c.tool.replace('silpo_', '')}${
-        prop ? ' ⁺' : ''}</span><span class="ms">${c.ms} ms</span></div>`;
-  }).join('') || '<span class="muted">Ще жодного виклику.</span>';
-}
-
-/* ===================== сценарії ===================== */
-/* Кожен сценарій оголошує очікуваний ланцюг tools — гість бачить його ДО запуску,
+/* ===================== сценарії =====================
+   Кожен сценарій оголошує очікуваний ланцюг tools — гість бачить його ДО запуску,
    а під час виконання виклики підсвічуються в тому порядку, в якому справді пішли. */
-const SCENARIOS = [
-  { id: 'repeat', title: 'Повтори останній чек',
-    phrase: 'Повтори мою минулу покупку',
-    path: '/api/pack/from_receipt', body: { index: 0 },
-    tools: ['silpo_get_my_offline_orders', 'silpo_get_similar_products',
-            'silpo_add_or_update_cart_products'] },
+/* Назви, фрази й ланцюги tools живуть на бекенді (silpo_agent_mcp/flows.py) —
+   одне джерело для карток, «Під капотом» і документації. Тут лишається тільки
+   те, чого бекенд знати не має: який маршрут смикнути й що спитати в гостя. */
+const HANDLERS = {
+  repeat:   { path: '/api/pack/from_receipt', body: { index: 0 } },
+  reorder:  { path: '/api/pack/reorder', body: {} },
+  pantry:   { path: '/api/pantry/missing', method: 'GET' },
+  wellbeing:{ path: '/api/wellbeing', wellbeing: true },
+  weekly:   { path: '/api/pack/weekly', ask: 'weekly', novelty: true },
+  budget:   { path: '/api/pack/budget', ask: 'budget', novelty: true },
 
-  { id: 'reorder', title: 'Що в мене закінчилось',
-    phrase: 'Збери те, що я зазвичай беру і що вже мало б закінчитись',
-    path: '/api/pack/reorder', body: {},
-    tools: ['silpo_get_my_offline_orders', 'silpo_find_products_batch'] },
+  meal:     { path: '/api/pack/meal', ask: 'meal', novelty: true },
+  mood:     { path: '/api/pack/mood', quiz: 'mood', novelty: true },
+  evening:  { path: '/api/pack/evening', quiz: 'evening', novelty: true },
+  party:    { path: '/api/pack/party', ask: 'party', novelty: true },
+  kids:     { path: '/api/pack/kids', ask: 'kids' },
+  family:   { path: '/api/family', method: 'GET' },
+  heirloom: { path: '/api/family/recipes', method: 'GET' },
 
-  { id: 'meal', title: 'Страва на суму', ask: 'meal',
-    phrase: 'Хочу вечерю на 500 грн',
-    path: '/api/pack/meal',
-    tools: ['silpo_find_recipes*', 'silpo_find_products_batch'] },
+  geo:      { path: '/api/delivery', geo: true },
+  weight:   { path: '/api/weight', method: 'GET' },
+  route:    { path: '/api/route', needsPack: true },
+  send:     { path: '/api/pack/send', ask: 'send' },
+};
 
-  { id: 'mood', title: 'Вгадай мій настрій', quiz: 'mood',
-    phrase: 'Підбери щось під мій настрій',
-    path: '/api/pack/mood',
-    tools: ['silpo_find_products_batch'] },
+/* Аналітика: відповідь — одне число, а не пак. */
+const INSIGHT_HANDLERS = {
+  coupons:  { path: '/api/coupons/audit' },
+  savings:  { path: '/api/savings' },
+  spend:    { path: '/api/spend' },
+  plus:     { path: '/api/plus' },
+  reminders:{ path: '/api/reminders' },
+  popular:  { path: '/api/popular' },
+  risk:     { path: '/api/risk', method: 'POST' },
+  eco:      { path: '/api/eco' },
+  impulse:  { path: '/api/impulse', ask: 'impulse' },
+  compare:  { path: '/api/compare', ask: 'compare' },
+  certs:    { path: '/api/certificates' },
+};
 
-  { id: 'evening', title: 'Залипнути в телевізор', quiz: 'evening',
-    phrase: 'Хочу залипнути ввечері',
-    path: '/api/pack/evening',
-    tools: ['silpo_get_product_sets', 'silpo_get_products', 'silpo_find_products_batch'] },
+let FLOWS = null, SCENARIOS = [], INSIGHTS = [];
 
-  { id: 'geo', title: 'Топати чи замовити', geo: true,
-    phrase: 'Дійти до Сільпо чи замовити доставку?',
-    path: '/api/delivery',
-    tools: ['silpo_estimate_delivery*', 'silpo_list_branches', 'silpo_get_time_slots'] },
-
-  { id: 'pantry', title: 'Що зникло з холодильника',
-    phrase: 'Подивись, чого немає вдома, і збери список',
-    path: '/api/pantry/missing', body: {}, method: 'GET',
-    tools: ['silpo_pantry_missing*', 'silpo_get_my_offline_orders'] },
-
-  { id: 'family', title: 'Вечеря на всю сімʼю',
-    phrase: 'Збери вечерю, щоб усім підійшло',
-    path: '/api/family', method: 'GET',
-    tools: ['silpo_get_family_preferences*', 'silpo_get_my_family'] },
-
-  { id: 'weight', title: 'Чи влізе кошик', method: 'GET',
-    phrase: 'Кошик не заважкий для доставки?',
-    path: '/api/weight',
-    tools: ['silpo_get_shopping_cart_by_id', 'silpo_get_available_delivery_types',
-            'silpo_get_time_slots'] },
-
-  { id: 'route', title: 'Маршрут по залу', needsPack: true,
-    phrase: 'Скажи, в якому порядку обходити магазин',
-    path: '/api/route',
-    tools: ['silpo_get_store_layout*'] },
-
-  { id: 'heirloom', title: 'Спадкова кухня', method: 'GET',
-    phrase: 'Приготуй те, що готувала бабуся',
-    path: '/api/family/recipes',
-    tools: ['silpo_get_family_recipes*', 'silpo_find_products_batch'] },
-
-  { id: 'wellbeing', title: 'Після тренування', wellbeing: true,
-    phrase: 'Я щойно з залу і спав 5 годин',
-    path: '/api/wellbeing',
-    tools: ['silpo_wellbeing_sync*', 'silpo_find_products_batch'] },
-];
+/* Зшиваємо опис із бекенду з обробником. Сценарій без обробника (напр. grybnytsia)
+   у списку не показуємо — він живе на своєму екрані. */
+async function mountScenarios() {
+  FLOWS = await api('/api/flows');
+  SCENARIOS = (FLOWS.flows || [])
+    .filter(f => HANDLERS[f.id])
+    .map(f => ({ ...f, ...HANDLERS[f.id],
+                 tools: f.steps.filter(x => x.kind !== 'ours')
+                   .map(x => x.tool + (x.kind === 'proposed' ? '*' : '')) }));
+  INSIGHTS = (FLOWS.flows || [])
+    .filter(f => INSIGHT_HANDLERS[f.id])
+    .map(f => ({ ...f, ...INSIGHT_HANDLERS[f.id], hint: f.result }));
+  renderScenarios(document.querySelector('#scenarios'));
+  renderInsights(document.querySelector('#insights'));
+  const b = document.querySelector('#btn-left');
+  if (b) b.title = `Сценарії — ${SCENARIOS.length + INSIGHTS.length} штук`;
+}
 
 let MODE = 'direct';           // 'llm' — через локальну модель, 'direct' — напряму
 let CHAIN_TIMER = null;
@@ -331,11 +611,20 @@ function setMode(m) {
     b.setAttribute('aria-pressed', b.dataset.mode === m));
 }
 
-function renderScenarios(into, second) {
-  // У мобільному вигляді сценарії стоять обабіч телефона: половина ліворуч,
-  // половина праворуч. У десктопному — усі в одній колонці.
-  const split = document.body.classList.contains('mobile') && second;
-  const half = split ? Math.ceil(SCENARIOS.length / 2) : SCENARIOS.length;
+/* Сімнадцять сценаріїв підряд — це чотири тисячі пікселів скролу, у якому
+   зникає і головне, і нове. Тому групуємо: перша група розгорнута, решта —
+   на один клік. Групи не тематичні для краси, а за джерелом даних. */
+const GROUPS = [
+  { id: 'chek',   title: 'Із твоїх чеків',       open: true,
+    about: 'усе будується на історії покупок' },
+  { id: 'podiia', title: 'Під подію і компанію',  open: false,
+    about: 'страва, настрій, вечір, зустріч, родина' },
+  { id: 'shop',   title: 'Магазин і логістика',   open: false,
+    about: 'відстань, вага, маршрут, «Нова пошта»' },
+];
+
+function renderScenarios(into) {
+  if (!into) return;
   const card = s => `
     <div class="scn" id="scn-${s.id}">
       <div class="top"><b>${s.title}</b>
@@ -346,10 +635,16 @@ function renderScenarios(into, second) {
           >${t.replace('silpo_','').replace('*','')}${t.endsWith('*') ? ' ⁺' : ''}</span>`).join('')}</div>
       <div class="live" id="live-${s.id}" hidden></div>
     </div>`;
-  const note = `<p class="soft" style="margin:10px 0 0">⁺ — tool, якого в MCP «Сільпо»
-    ще немає. Ми його реалізували в себе, щоб сценарій працював, і пропонуємо додати.</p>`;
-  into.innerHTML = SCENARIOS.slice(0, half).map(card).join('') + (split ? '' : note);
-  if (second) second.innerHTML = split ? SCENARIOS.slice(half).map(card).join('') + note : '';
+  into.innerHTML = (FLOWS.groups || [])
+    .filter(g => SCENARIOS.some(s => s.group === g.id))
+    .map((g, i) => {
+      const rows = SCENARIOS.filter(s => s.group === g.id);
+      return `<details class="grp" ${i === 0 ? 'open' : ''}>
+        <summary><b>${g.title}</b><span>${rows.length} · ${g.about}</span></summary>
+        ${rows.map(card).join('')}</details>`;
+    }).join('')
+    + `<p class="soft" style="margin:10px 0 0">⁺ — tool, якого в MCP «Сільпо» ще немає.
+       Ми його реалізували в себе, щоб сценарій працював, і пропонуємо додати.</p>`;
 }
 
 /* Живий ланцюг: опитуємо трейс і показуємо виклики в міру того, як вони йдуть. */
@@ -381,6 +676,9 @@ async function runScenario(id, extraBody) {
   if (s.ask === 'meal' && !extraBody) return askMeal(s);
   if (s.geo && !extraBody) return askGeo(s);
   if (s.wellbeing && !extraBody) return askWellbeing(s);
+  if (s.ask && ASKS[s.ask] && !extraBody) return ASKS[s.ask](s);
+  // Новизна — окреме питання, і воно йде ПІСЛЯ теми: спершу «що», потім «яке».
+  if (s.novelty && !(extraBody || {}).novelty) return askNovelty(s, extraBody || {});
   if (s.needsPack && !PACK) return toast('Спершу збери пак — маршрут будується під нього');
   if (s.id === 'route' && !extraBody)
     extraBody = { items: PACK.items.map(i => ({ name: i.name })), branch_id: PACK.branch || null };
@@ -415,6 +713,13 @@ async function callScenario(s, extraBody) {
 
 function handleResult(s, r) {
   if (bad(r)) return;
+  // Кнопка сценарію — це та сама фраза: лишаємо її в розмові, щоб історія
+  // читалась однаково, звідки б не прийшов запит.
+  if (typeof bubble === 'function' && s.phrase) {
+    if (MODE !== 'llm') bubble('me', s.phrase);
+    bubble('tools', '→ ' + (s.tools || []).slice(0, 3).map(t =>
+      t.replace('silpo_', '').replace('*', '')).join(' · '));
+  }
   if (r.items) { renderPack(r); return; }
   if (s.id === 'geo') return renderDelivery(r);
   if (s.id === 'pantry') return renderPantry(r);
@@ -602,7 +907,17 @@ function renderFamily(r) {
         : '<span style="color:var(--red)">вподобань немає — MCP їх не віддає</span>'}</div>`).join('')}
     ${r.pets.map(p => `<div class="habit"><b>${p.name} <span class="soft">· ${p.kind}</span></b>
       корм додається автоматично</div>`).join('')}
+    <button class="go" style="margin-top:12px" onclick="familyDinner()">
+      Зібрати вечерю на всіх</button>
     <div class="note" style="margin-top:12px">${r.spec}</div>`;
+}
+async function familyDinner(){
+  toast('Збираю з поправкою на чиїсь алергії…');
+  const p = await api('/api/pack/family', 'POST', { theme: 'вечеря', max_uah: 900 });
+  if (bad(p)) return;
+  renderPack(p);
+  if ((p.blocked_for_everyone || []).length)
+    toast('Виключив для всіх: ' + p.blocked_for_everyone.join(', '));
 }
 function renderWellbeing(r) {
   $('#pack').innerHTML = `
@@ -727,8 +1042,8 @@ function drawDeck(into, swiped) {
          <div class="soft">${card.unit || ''}</div>
        </div></div>
        <div class="deck-btns">
-         <button class="no" onclick="swipe(false)" title="не показувати">✕</button>
-         <button class="yes" onclick="swipe(true)" title="в обране">♥</button>
+         <button class="no" onclick="swipe(false)" title="не показувати">${icon('close', 22)}</button>
+         <button class="yes" onclick="swipe(true)" title="в обране">${icon('heart', 22)}</button>
        </div>
        <p class="soft" style="text-align:center">${DECK_I + 1} із ${DECK.length}</p>`;
 }
@@ -812,12 +1127,12 @@ async function removeFromCart(productId) {
 /* Настрій під продуктовий магазин: замість абстрактних станів — фрукт,
    і кожен фрукт тягне свою полицю. Мемно, але веде до реальних товарів. */
 const FRUITS = {
-  'ананас':    { emoji: '🍍', line: 'колючий зовні, солодкий усередині', mood: 'ігривий' },
-  'кавун':     { emoji: '🍉', line: 'великий, соковитий, на всю компанію', mood: 'святковий' },
-  'лимон':     { emoji: '🍋', line: 'кислий і має на те причини', mood: 'втомлений' },
-  'авокадо':   { emoji: '🥑', line: 'або ще ні, або вже все', mood: 'спокійний' },
-  'банан':     { emoji: '🍌', line: 'простий, надійний, завжди під рукою', mood: 'бадьорий' },
-  'полуниця':  { emoji: '🍓', line: 'ніжна і трохи закохана', mood: 'романтичний' },
+  'ананас':    { line: 'колючий зовні, солодкий усередині', mood: 'ігривий' },
+  'кавун':     { line: 'великий, соковитий, на всю компанію', mood: 'святковий' },
+  'лимон':     { line: 'кислий і має на те причини', mood: 'втомлений' },
+  'авокадо':   { line: 'або ще ні, або вже все', mood: 'спокійний' },
+  'банан':     { line: 'простий, надійний, завжди під рукою', mood: 'бадьорий' },
+  'полуниця':  { line: 'ніжна і трохи закохана', mood: 'романтичний' },
 };
 const FRUIT_QUIZ = [
   { q: 'Ранок почався з…', a: [['Кави на бігу','банан'],['Тиші й вікна','авокадо'],
@@ -835,7 +1150,7 @@ QUIZ.mood = {
     answers.forEach(f => score[f] = (score[f] || 0) + 1);
     const fruit = Object.keys(score).sort((a, b) => score[b] - score[a])[0];
     const f = FRUITS[fruit];
-    toast(`${f.emoji} Сьогодні ти ${fruit} — ${f.line}`);
+    toast(`Сьогодні ти ${fruit} — ${f.line}`);
     return { mood: f.mood, max_uah: 600, fruit };
   },
 };
@@ -915,4 +1230,256 @@ async function saveHeirloom() {
   if (bad(r)) return;
   toast('Записано в книгу родини');
   runScenario('heirloom');
+}
+
+/* ===================== Новизна: знайоме чи нове ===================== */
+/* Питання, яке агент має ставити САМ, а не вирішувати за гостя. «Знайоме» й
+   «нове» — різні осі: свайп уліво теж робить товар знайомим. */
+function askNovelty(s, body) {
+  $('#quiz-body').innerHTML = `
+    <h2 style="margin:0 0 2px">Щось знайоме чи щось нове?</h2>
+    <div class="soft">Ваги смаку в тебе вже накопичені — з чеків і зі свайпів
+      у «Департаменті дивинок». Питання лише, з якого боку їх читати.</div>
+    <div class="quiz" style="grid-template-columns:1fr">
+      <button onclick="noveltyPick('familiar')"><b>Щось знайоме</b><br>
+        <span class="soft">перевірене: те, що вже було в чеках і сподобалось</span></button>
+      <button onclick="noveltyPick('new')"><b>Щось нове</b><br>
+        <span class="soft">чого ти ще не брав — але з полиць, які ти любиш</span></button>
+      <button onclick="noveltyPick('any')"><b>Байдуже</b><br>
+        <span class="soft">просто найкраще під запит</span></button>
+    </div>`;
+  window.noveltyPick = mode => { quiz.close(); runScenario(s.id, { ...body, novelty: mode }); };
+  quiz.showModal();
+}
+
+/* ===================== діалоги нових сценаріїв ===================== */
+const ASKS = {
+  weekly: s => {
+    $('#quiz-body').innerHTML = `
+      <h2 style="margin:0 0 2px">Тижневий закуп</h2>
+      <div class="soft">Складеться з трьох джерел: чого немає вдома, що мало б
+        закінчитись за циклом покупок, і що з улюбленого зараз в акції.
+        Кожна позиція скаже, чому вона тут.</div>
+      <h3>Стеля бюджету</h3>
+      <div class="filters"><input id="w-sum" type="number" placeholder="без обмеження" step="50">
+        ${[700,1200,2000].map(v => `<button class="fbtn" onclick="$('#w-sum').value=${v}">${v} ₴</button>`).join('')}</div>
+      <button class="go" style="width:100%;margin-top:12px"
+        onclick="quiz.close();runScenario('weekly',{budget_uah:+$('#w-sum').value||null})">Зібрати</button>`;
+    quiz.showModal();
+  },
+  budget: s => {
+    $('#quiz-body').innerHTML = `
+      <h2 style="margin:0 0 2px">Розумний бюджет</h2>
+      <div class="soft">Кошик рівно під залишок. Спершу те, що вже мало б
+        закінчитись, потім те, що береш найчастіше. Що не влізло — назву поіменно.</div>
+      <h3>Скільки лишилось</h3>
+      <div class="filters"><input id="b-sum" type="number" value="840" step="10">
+        <input id="b-days" type="number" value="7" step="1" style="max-width:90px" title="на скільки днів"></div>
+      <button class="go" style="width:100%;margin-top:12px"
+        onclick="quiz.close();runScenario('budget',{budget_uah:+$('#b-sum').value||500,days:+$('#b-days').value||7})">Зібрати</button>`;
+    quiz.showModal();
+  },
+  party: s => {
+    const themes = ['шашлик','настолки','пікнік','день народження','футбол','фільм'];
+    $('#quiz-body').innerHTML = `
+      <h2 style="margin:0 0 2px">Зустріч</h2>
+      <div class="soft">Кількості рахуються на людей: вагове в кілограмах, штучне
+        в штуках. Мішок вугілля лишається одним і на трьох, і на шістьох.</div>
+      <h3>Тема</h3>
+      <div class="quiz" style="grid-template-columns:repeat(3,1fr)">
+        ${themes.map(t => `<button data-th="${t}" onclick="partyPick('${t}')">${t}</button>`).join('')}</div>
+      <h3>Скільки людей і бюджет</h3>
+      <div class="filters">
+        <input id="p-people" type="number" value="6" min="2" max="30" style="max-width:90px">
+        <input id="p-sum" type="number" placeholder="бюджет" step="100"></div>
+      <button class="go" style="width:100%;margin-top:12px" onclick="partyGo()">Зібрати</button>`;
+    window.PARTY = 'шашлик';
+    quiz.showModal();
+    setTimeout(() => partyPick('шашлик'), 0);
+  },
+  kids: s => {
+    $('#quiz-body').innerHTML = `
+      <h2 style="margin:0 0 2px">Дитяча зона за віком</h2>
+      <div class="soft">Вік візьму з акаунта «Сільпо»
+        (<span class="mono">get_my_family.children[].dateOfBirth</span>) — поле є в API
+        і не використовується ніде. Підлітку 16 «дитячі товари» означають інше,
+        ніж однорічному.</div>
+      <div class="filters" style="margin-top:12px">
+        <input id="k-sum" type="number" placeholder="бюджет" step="50"></div>
+      <button class="go" style="width:100%;margin-top:12px"
+        onclick="quiz.close();runScenario('kids',{max_uah:+$('#k-sum').value||null})">Підібрати</button>`;
+    quiz.showModal();
+  },
+  send: s => {
+    $('#quiz-body').innerHTML = `
+      <h2 style="margin:0 0 2px">Відправ рідним в інше місто</h2>
+      <div class="soft">Логістика в «Сільпо» вже є: NovaPoshta в типах доставки
+        і довідник відділень у двох tools. Бракує лише історії — ось вона.</div>
+      <h3>Куди</h3>
+      <div class="filters"><input id="s-city" value="Полтава" placeholder="місто">
+        <input id="s-office" placeholder="№ відділення (необовʼязково)" style="max-width:190px"></div>
+      <h3>Що покласти</h3>
+      <div class="filters"><input id="s-items" value="кава, шоколад, печиво, чай"></div>
+      <button class="go" style="width:100%;margin-top:12px" onclick="sendGo()">Зібрати й знайти відділення</button>`;
+    quiz.showModal();
+  },
+  impulse: s => {
+    $('#quiz-body').innerHTML = `
+      <h2 style="margin:0 0 2px">Чи варто це брати</h2>
+      <div class="soft">Порівняю поточну ціну з твоєю власною середньою за чеками
+        і подивлюсь, скільки разів ти брав це за 30 днів. Агент, який лише
+        продає, — не помічник.</div>
+      <div class="filters" style="margin-top:12px">
+        <input id="i-name" value="чипси" placeholder="що саме"></div>
+      <button class="go" style="width:100%;margin-top:12px"
+        onclick="quiz.close();runInsight('impulse',{name:$('#i-name').value.trim()})">Спитати</button>`;
+    quiz.showModal();
+  },
+  compare: s => {
+    $('#quiz-body').innerHTML = `
+      <h2 style="margin:0 0 2px">Де вигідніше</h2>
+      <div class="soft">Ціна прив'язана до магазину, а <span class="mono">find_products_batch</span>
+        приймає branchId прямо в аргументах — тож порівняння можливе без жодного нового tool.</div>
+      <h3>Список</h3>
+      <div class="filters"><input id="c-items" value="молоко, хліб, яйця, кава"></div>
+      <h3>Місто і скільки магазинів</h3>
+      <div class="filters"><input id="c-city" value="Київ">
+        <input id="c-limit" type="number" value="4" min="2" max="8" style="max-width:80px"></div>
+      <button class="go" style="width:100%;margin-top:12px" onclick="compareGo()">Порівняти</button>`;
+    quiz.showModal();
+  },
+};
+
+function partyPick(t) {
+  window.PARTY = t;
+  document.querySelectorAll('[data-th]').forEach(b =>
+    b.style.borderColor = b.dataset.th === t ? 'var(--blue)' : '');
+}
+function partyGo() {
+  quiz.close();
+  runScenario('party', { theme: window.PARTY, people: +$('#p-people').value || 4,
+                         max_uah: +$('#p-sum').value || null });
+}
+function sendGo() {
+  const items = $('#s-items').value.split(',').map(x => x.trim()).filter(Boolean);
+  quiz.close();
+  runScenario('send', { city: $('#s-city').value.trim() || 'Полтава', items,
+                        office_query: $('#s-office').value.trim() || null });
+}
+function compareGo() {
+  const items = $('#c-items').value.split(',').map(x => x.trim()).filter(Boolean);
+  quiz.close();
+  runInsight('compare', { items, city: $('#c-city').value.trim() || 'Київ',
+                          limit: +$('#c-limit').value || 4 });
+}
+
+/* ===================== Аналітика ===================== */
+function renderInsights(into) {
+  if (!into) return;
+  into.innerHTML = INSIGHTS.map(i => `
+    <div class="scn" id="ins-${i.id}">
+      <div class="top"><b>${i.title}</b>
+        <button class="run" onclick="runInsight('${i.id}')">Спитати</button></div>
+      <div class="phrase">«${i.phrase}»</div>
+      <div class="soft" style="font-size:12px">${i.hint}</div>
+      <div class="live" id="ires-${i.id}" hidden></div>
+    </div>`).join('')
+    + `<p class="soft" style="margin:10px 0 0">Жодного нового tool: усе рахується з
+       тих 40, що вже працюють. Не використовує їх ніхто, бо відповідь живе
+       на стику двох викликів.</p>`;
+}
+
+async function runInsight(id, body) {
+  const i = INSIGHTS.find(x => x.id === id);
+  if (i.ask && !body) return ASKS[i.ask](i);
+  const box = $('#ires-' + id);
+  box.hidden = false;
+  box.innerHTML = '<div class="row"><span class="spin">рахую з чеків…</span></div>';
+  const r = (i.method === 'POST' || body)
+    ? await api(i.path, 'POST', body || {})
+    : await api(i.path);
+  if (bad(r)) { box.innerHTML = ''; return; }
+  box.innerHTML = insightView(id, r);
+  window.LAST_INSIGHT = r;
+}
+
+const money = v => uah(v) + ' ₴';
+
+function insightView(id, r) {
+  const line = (a, b, cls) => `<div class="row ${cls||''}"><span class="nm">${a}</span>
+    <span class="ms">${b}</span></div>`;
+  if (id === 'coupons') return `
+    <div class="head" style="margin:0 0 6px"><b>${r.headline}</b></div>
+    ${r.expired_count ? line('згоріли невикористаними', r.expired_count + ' шт', 'prop') : ''}
+    ${(r.burning||[]).slice(0,5).map(c =>
+      line(`${c.about||'купон'} · ${c.reward||''}`,
+           c.days_left === 0 ? 'сьогодні' : c.days_left + ' дн', c.days_left <= 1 ? 'prop' : '')).join('')}
+    ${(r.not_activated||[]).length ? `<p class="soft" style="margin:7px 0 0">
+      Не активовано ${r.not_activated.length} — активувати треба руками в застосунку:
+      tool на запис у MCP немає.</p>` : ''}`;
+  if (id === 'savings') return `
+    <div class="head" style="margin:0 0 6px"><b>${r.headline}</b></div>
+    ${line('частка знижок у сумі', r.saved_share + '%')}
+    ${line('балобонусів нараховано', money(r.bonuses_uah))}
+    ${(r.by_promo||[]).slice(0,4).map(p =>
+      line((p.text||'промо').slice(0,44), `${money(p.uah)} · ${p.times}×`)).join('')}
+    <p class="soft" style="margin:7px 0 0">Звірка через <span class="mono">promoId</span>:
+      купон ↔ <span class="mono">rewards[]</span> у чеку. Точний збіг, не здогадка.</p>`;
+  if (id === 'spend') return `
+    <div class="head" style="margin:0 0 6px"><b>${r.headline}</b>
+      ${r.delta_percent != null ? `<span class="${r.delta_percent>0?'due':''}">
+        ${r.delta_percent>0?'+':''}${r.delta_percent}%</span>` : ''}</div>
+    ${(r.categories||[]).slice(0,6).map(c => line(c.category,
+      `${money(c.now_uah)}${c.delta_percent!=null?` · ${c.delta_percent>0?'+':''}${c.delta_percent}%`:''}`,
+      (c.delta_percent||0) >= 25 ? 'prop' : '')).join('')}`;
+  if (id === 'plus') return `
+    <div class="head" style="margin:0 0 6px"><b>${r.headline}</b></div>
+    ${line('береш на місяць', money(r.per_month_uah))}
+    ${line('кешбек за місяць', money(r.cashback_per_month_uah))}
+    ${line('підписка коштує', money(r.price_uah))}
+    ${line('чистими', money(r.net_per_month_uah), r.net_per_month_uah > 0 ? '' : 'prop')}
+    <p class="soft" style="margin:7px 0 0">${r.gap}</p>`;
+  if (id === 'reminders') return `
+    <div class="head" style="margin:0 0 6px"><b>${r.headline}</b></div>
+    ${(r.overdue||[]).slice(0,5).map(h =>
+      line(h.name.slice(0,40), `прострочено ${-h.days_left} дн`, 'prop')).join('')}
+    ${(r.soon||[]).slice(0,3).map(h =>
+      line(h.name.slice(0,40), `через ${h.days_left} дн`)).join('')}
+    ${r.pet_note ? `<p class="soft" style="margin:7px 0 0">${r.pet_note}</p>` : ''}`;
+  if (id === 'popular') return `
+    <div class="head" style="margin:0 0 6px"><b>${r.headline}</b></div>
+    ${(r.categories||[]).slice(0,6).map(c => line(c.title, '')).join('')}
+    <p class="soft" style="margin:7px 0 0">${r.gap}</p>`;
+  if (id === 'risk') return `
+    <div class="head" style="margin:0 0 6px"><b>${r.headline || r.note}</b></div>
+    ${(r.risky||[]).slice(0,5).map(x =>
+      line(x.name || x.product_id, (x.options||[]).length + ' замін')).join('')}`;
+  if (id === 'eco') return `
+    <div class="head" style="margin:0 0 6px"><b>Екооцінка ${r.score}/100</b></div>
+    ${r.weight_kg ? line('вага кошика', r.weight_kg + ' кг') : ''}
+    ${(r.single_use||[]).map(n => line(n.slice(0,40), 'одноразове', 'prop')).join('')}
+    ${(r.advice||[]).map(a => `<p class="soft" style="margin:5px 0 0">${a}</p>`).join('')}
+    <p class="soft" style="margin:7px 0 0">${r.gap}</p>`;
+  if (id === 'impulse') return `
+    <div class="head" style="margin:0 0 6px"><b>${r.verdict === 'бери' ? '✅ бери' : '⏸ почекай'}
+      · ${r.query}</b></div>
+    ${(r.reasons||[]).map(x => line(x, '')).join('')}
+    ${line('брав усього', r.times_bought + ' раз(и), за 30 дн — ' + r.times_last_30d)}
+    ${r.avg_paid_uah ? line('твоя середня ціна', money(r.avg_paid_uah)) : ''}
+    ${r.price_now_uah ? line('зараз', money(r.price_now_uah)) : ''}`;
+  if (id === 'certs') return `
+    <div class="head" style="margin:0 0 6px"><b>${r.headline || r.error}</b></div>
+    ${(r.certificates || []).map(c => line(`${c.value_uah} ₴ · до ${c.expires || '—'}`,
+      c.days_left != null ? `${c.days_left} дн` : '')).join('')}
+    ${r.cart_total_uah ? line('кошик зараз', money(r.cart_total_uah)) : ''}
+    ${r.left_to_pay_uah != null && r.count ? line('лишиться доплатити', money(r.left_to_pay_uah),
+      r.covers_cart ? '' : 'prop') : ''}
+    <p class="soft" style="margin:7px 0 0">${r.gap || r.note || ''}</p>`;
+  if (id === 'compare') return `
+    <div class="head" style="margin:0 0 6px"><b>${r.headline}</b></div>
+    ${(r.branches||[]).map(b => line(`${b.city||''} ${b.address||b.branch_id}`.slice(0,40),
+      b.error ? 'помилка' : `${money(b.total_uah)}${b.missing?.length ? ` · нема ${b.missing.length}` : ''}`,
+      r.best && b.branch_id === r.best.branch_id ? '' : '')).join('')}
+    <p class="soft" style="margin:7px 0 0">${r.how}</p>`;
+  return `<div class="row"><span class="nm">Готово</span></div>`;
 }
