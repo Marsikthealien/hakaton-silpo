@@ -48,7 +48,8 @@ async def main():
     await run('reminders', facade.reminders(), lambda r: 'overdue' in r, lambda r: r['headline'])
     await run('coupon_audit', insights.coupon_audit(), lambda r: r['coupons_total'] > 0, lambda r: r['headline'])
     await run('savings_report', insights.savings_report(), lambda r: r['paid_uah'] > 0, lambda r: r['headline'])
-    await run('spend_report', insights.spend_report(), lambda r: r['categories'], lambda r: r['headline'])
+    await run('spend_report', insights.spend_report(),
+              lambda r: r['categories'] and all('items' in c for c in r['categories']), lambda r: r['headline'])
     await run('plus_check', insights.plus_check(), lambda r: r['verdict'], lambda r: r['verdict'])
     await run('popular_now', insights.popular_now(), lambda r: r['count'] > 0, lambda r: str(r['count']))
     # Плаваючий збій ловиться лише серією: один успішний виклик нічого не доводить.
@@ -70,7 +71,10 @@ async def main():
                   lambda r: r['said'])
         await run('pack_set_qty', facade.pack_set_qty('молоко', 3), lambda r: r['qty'] == 3,
                   lambda r: r['said'])
-        await run('pack_swap_named', facade.pack_swap_named('чипси'),
+        # Міняємо ПЕРШУ позицію самого пака, а не зашите «чипси»: чек —
+        # живий, і одного дня в ньому лишились самі пакети для сміття.
+        first = ((p.get('items') or [{}])[0].get('name') or 'молоко').split()[0]
+        await run('pack_swap_named', facade.pack_swap_named(first),
                   lambda r: r.get('said'), lambda r: r['said'][:60])
         await run('pack_remove', facade.pack_remove('молоко'), lambda r: r.get('removed'),
                   lambda r: r['said'])
@@ -78,6 +82,10 @@ async def main():
         await run('picking_risk', insights.picking_risk(p['id']), lambda r: 'risky' in r, lambda r: r['headline'][:60])
         await run('eco_check', insights.eco_check(p['id']), lambda r: 'score' in r, lambda r: f'оцінка {r["score"]}')
         await run('optimize_pack', facade.optimize_pack(p['id']), lambda r: r is not None, lambda r: '')
+        await run('precheck_pack', facade.precheck_pack(p['id']),
+                  lambda r: [c['id'] for c in r['checks']] == ['delivery', 'weight', 'coupon', 'promo'],
+                  lambda r: r['verdict'] + ' · ' + ' '.join(
+                      ('✓' if c['ok'] else '✗' if c['ok'] is False else '–') for c in r['checks']))
         packs.delete(p['id'])
     print('\n' + ('усе зелене' if not fails else f'ВПАЛО: {", ".join(fails)}'))
     return 1 if fails else 0

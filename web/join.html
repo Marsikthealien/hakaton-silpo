@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Приєднатись до компанії</title>
+<link rel="stylesheet" href="/app.css">
+<style>
+  /* Сторінка запрошення: її відкривають із чужого телефона за QR, тож тут
+     ані шапки, ані рамки — лише одна картка на ширину екрана. */
+  .joinpage{max-width:440px;margin:0 auto;padding:22px 16px 40px}
+  .joinpage h1{font-size:22px;margin:0 0 4px}
+  .joinpage h3{font-size:13px;margin:14px 0 4px}
+  .joinpage .who{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .joinpage .ok{border-left:4px solid var(--green);padding-left:12px}
+</style>
+</head>
+<body>
+<main class="joinpage">
+  <div class="card" id="card"><p class="soft">Читаю компанію…</p></div>
+</main>
+<div class="toast" id="toast"></div>
+<script src="/app.js"></script>
+<script>
+const JOIN_CREW = new URLSearchParams(location.search).get('crew');
+const csvv = id => (($('#' + id) || {}).value || '').split(',').map(x => x.trim()).filter(Boolean);
+
+async function load(){
+  const d = JOIN_CREW ? await api('/api/crew?crew_id=' + encodeURIComponent(JOIN_CREW)) : {};
+  if (!d.crew) {
+    $('#card').innerHTML = '<h1>Компанії не знайшов</h1><p class="soft">Посилання застаріло або компанію вже прибрали.</p>';
+    return;
+  }
+  const c = d.crew, mem = d.members || [];
+  $('#card').innerHTML = `
+    <div class="soft" style="font-size:12px;letter-spacing:.06em;text-transform:uppercase">Запрошення</div>
+    <h1>${uiEsc(c.title)}</h1>
+    <p class="soft" style="margin:0">${uiEsc(c.occasion || 'подія')} · уже ${mem.length} осіб</p>
+    <div class="who">${mem.map(m => `<span class="tag">${uiEsc(m.name)}</span>`).join('')}</div>
+    <p style="margin:14px 0 0">Скажіть про себе головне — організатор побачить це
+      одразу, а кошик збереться з урахуванням усіх.</p>
+    <h3>Імʼя</h3>
+    <div class="filters"><input id="j-name" placeholder="Як вас звати" autocomplete="name"></div>
+    <h3>Алергії</h3>
+    <div class="filters"><input id="j-alg" placeholder="через кому: горіхи, мед"></div>
+    <h3>Дієта</h3>
+    <div class="filters"><input id="j-diet" placeholder="без лактози, вегетаріанська"></div>
+    <h3>Що взяти</h3>
+    <div class="filters"><input id="j-sug" placeholder="через кому: сир, виноград"></div>
+    <button class="go" style="width:100%;margin-top:14px" onclick="join()">Я в компанії</button>
+    <p class="soft" style="margin:12px 0 0">Алергія будь-кого виключає товар для всього
+      столу — тому це питають кожного, а не організатора.</p>`;
+}
+
+async function join(){
+  const name = ($('#j-name').value || '').trim();
+  if (!name) return toast('Без імені не додам');
+  const r = await api('/api/crew/join', 'POST', { crew_id: JOIN_CREW, name,
+    allergies: csvv('j-alg'), diets: csvv('j-diet'), suggests: csvv('j-sug') });
+  if (bad(r)) return;
+  $('#card').innerHTML = `
+    <div class="ok"><h1>Ви в компанії</h1>
+    <p class="soft">${uiEsc(name)} — ${r.members} осіб разом. Організатор уже бачить
+      ваші алергії й побажання; кошик збереться з їх урахуванням.</p></div>
+    <h3>Моя частка</h3>
+    <p class="soft" style="margin:0 0 6px">Типово чек ділиться порівну. Якщо берете менше
+      або більше — запропонуйте суму, організатор побачить і підтвердить.</p>
+    <div class="filters">
+      <input id="j-share" type="number" min="0" step="1" placeholder="сума, ₴" style="max-width:130px">
+      <input id="j-why" placeholder="чому: беру лише пиво"></div>
+    <button class="go ghost" style="width:100%;margin-top:8px" onclick="proposeShare('${uiEsc(name).replace(/'/g, 'ʼ')}')">Запропонувати</button>
+    <button class="go ghost" style="width:100%;margin-top:14px" onclick="load()">Змінити дані</button>`;
+}
+
+async function proposeShare(name){
+  const amount = +($('#j-share').value || 0);
+  if (!amount) return toast('Вкажіть суму');
+  const r = await api('/api/crew/share', 'POST', { crew_id: JOIN_CREW, name, amount_uah: amount,
+    propose: true, note: ($('#j-why').value || '').trim() });
+  if (bad(r)) return;
+  toast('Пропозицію надіслано організатору');
+  $('#j-share').value = ''; $('#j-why').value = '';
+}
+load();
+</script>
+</body>
+</html>

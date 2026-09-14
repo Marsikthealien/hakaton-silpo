@@ -9,6 +9,7 @@ MCP-tools через MCPHost. Ті самі інструменти бачить 
 
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -22,6 +23,16 @@ from web import chat as chatmod
 from web.mcp_host import host
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+# Панель «Що відбувається» опитує трейс постійно — у журналі доступу це
+# суцільна стіна з /api/trace, за якою не видно жодного справжнього запиту.
+class _QuietTrace(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "/api/trace" not in record.getMessage()
+
+
+logging.getLogger("uvicorn.access").addFilter(_QuietTrace())
 
 
 def page(name: str):
@@ -43,6 +54,27 @@ def page(name: str):
 
 def ok(data) -> JSONResponse:
     return JSONResponse(data)
+
+
+async def qr(request: Request):
+    """QR-код як SVG — для запрошення в компанію.
+
+    Текст будь-який, але призначення одне: посилання `/join?crew=…`, яке
+    організатор показує з екрана, а гість читає камерою. Генерується тут,
+    щоб не тягнути у фронт бібліотеку заради однієї картинки.
+    """
+    import io
+
+    import segno
+
+    text = (request.query_params.get("text") or "").strip()[:512]
+    if not text:
+        return Response("порожньо", status_code=400)
+    buf = io.BytesIO()
+    segno.make(text, error="m").save(buf, kind="svg", scale=6, border=2,
+                                     dark="#0F1729", light=None)
+    return Response(buf.getvalue(), media_type="image/svg+xml",
+                    headers={"Cache-Control": "no-store"})
 
 
 async def body(request: Request) -> dict:
@@ -94,9 +126,11 @@ def scenario_route(tool: str, casts: dict | None = None):
             avoid = (profile.get("allergies") or []) + (profile.get("dislikes") or [])
             if avoid:
                 args["avoid"] = avoid
-        if "prefer_promo" not in args and profile.get("bonus_first"):
+        # Акційне — завжди спершу: перемикача в профілі більше немає.
+        if "prefer_promo" not in args and profile.get("bonus_first", True):
             args["prefer_promo"] = True
-        if tool == "meal_pack" and "equipment" not in args and profile.get("equipment"):
+        if tool in ("meal_pack", "family_pack") and "equipment" not in args \
+                and profile.get("equipment"):
             args["equipment"] = profile["equipment"]
         return ok(await host.call(tool, args))
 
@@ -197,7 +231,8 @@ async def chat_narrate(request: Request):
 
 async def chat_send(request: Request):
     payload = await body(request)
-    return ok(await chatmod.chat(payload.get("messages", []), host))
+    return ok(await chatmod.chat(payload.get("messages", []), host,
+                                 pack_id=payload.get("pack_id") or None))
 
 
 routes = [
@@ -206,8 +241,13 @@ routes = [
     Route("/game", page("game.html")),
     Route("/road", page("road.html")),
     Route("/tech", page("tech.html")),
+    Route("/join", page("join.html")),
+    Route("/qr", qr),
     Route("/app.css", page("app.css")),
     Route("/app.js", page("app.js")),
+    Route("/mushroom.png", page("mushroom.png")),
+    Route("/mushroom.riv", page("mushroom.riv")),
+    Route("/ava.js", page("ava.js")),
     Route("/api/status", status),
     Route("/api/scenarios", tool_route("scenarios")),
     Route("/api/preferences", preferences),
@@ -264,6 +304,7 @@ routes = [
     Route("/api/promos/select", tool_route("silpo_select_promos"), methods=["POST"]),
     Route("/api/pantry", tool_route("silpo_pantry_sync"), methods=["POST"]),
     Route("/api/pantry/missing", tool_route("silpo_pantry_missing")),
+    Route("/api/pantry/state", tool_route("silpo_pantry_state")),
     Route("/api/wellbeing", tool_route("silpo_wellbeing_sync"), methods=["POST"]),
     Route("/api/wellbeing/state", tool_route("silpo_wellbeing_state")),
     Route("/api/pack/optimize", tool_route("optimize_pack"), methods=["POST"]),
@@ -271,6 +312,7 @@ routes = [
     Route("/api/pack/alternatives", tool_route("alternatives"), methods=["POST"]),
     Route("/api/pack/swap_to", tool_route("swap_to"), methods=["POST"]),
     Route("/api/pack/screen", tool_route("screen_pack"), methods=["POST"]),
+    Route("/api/pack/precheck", tool_route("precheck_pack", casts={"latitude": float, "longitude": float}), methods=["POST"]),
     Route("/api/payment", tool_route("payment_hint", casts={"pack_total_uah": float}), methods=["POST"]),
     Route("/api/expiring", tool_route("expiring", from_query=("days",), casts={"days": int})),
     Route("/api/pack/add", tool_route("pack_add", casts={"qty": float}), methods=["POST"]),
@@ -333,6 +375,25 @@ routes = [
           methods=["POST"]),
     Route("/api/pack/family", scenario_route("family_pack", {"max_uah": float}),
           methods=["POST"]),
+
+    # --- компанія: разова група під подію (новий концепт) ---
+    Route("/api/crew", tool_route("silpo_get_crew", from_query=("crew_id",))),
+    Route("/api/crews", tool_route("silpo_list_crews")),
+    Route("/api/crew/create", tool_route("silpo_create_crew",
+          casts={"people": int}), methods=["POST"]),
+    Route("/api/crew/join", tool_route("silpo_crew_join"), methods=["POST"]),
+    Route("/api/crew/suggest", tool_route("silpo_crew_suggest"), methods=["POST"]),
+    Route("/api/crew/leave", tool_route("silpo_crew_leave"), methods=["POST"]),
+    Route("/api/crew/paid", tool_route("silpo_crew_paid",
+          casts={"amount_uah": float}), methods=["POST"]),
+    Route("/api/crew/split", tool_route("silpo_crew_split",
+          casts={"total_uah": float}), methods=["POST"]),
+    Route("/api/crew/delete", tool_route("silpo_delete_crew"), methods=["POST"]),
+    Route("/api/crew/clear", tool_route("silpo_clear_crews"), methods=["POST"]),
+    Route("/api/crew/share", tool_route("silpo_crew_share", casts={"amount_uah": float}), methods=["POST"]),
+    Route("/api/crew/share/answer", tool_route("silpo_crew_share_answer"), methods=["POST"]),
+    Route("/api/pack/crew", scenario_route("crew_pack", {"max_uah": float}),
+          methods=["POST"]),
     Route("/api/pack/office", scenario_route("office_pack",
           {"people": int, "max_uah": float}), methods=["POST"]),
     Route("/api/pack/send", scenario_route("send_to_family", {"max_uah": float}),
@@ -363,6 +424,10 @@ routes = [
 
 @asynccontextmanager
 async def lifespan(app):
+    # Компанії разові: після перезапуску їх немає, і сценарій у чаті знову
+    # починається з пропозиції створити.
+    from silpo_agent_mcp import proposed as _proposed
+    _proposed.clear_crews()
     await host.start()
     try:
         yield

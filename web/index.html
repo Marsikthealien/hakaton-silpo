@@ -8,15 +8,16 @@
 </head>
 <body>
 
-<!-- Панелі — колонки сітки, а не накладки: коли вони закриті, робоча область
-     займає всю ширину, коли відкриті — розсовують її. -->
-<div class="shell" id="shell">
+<!-- Три колонки, і всі три видно завжди: сценарії ліворуч, застосунок у рамці
+     телефона посередині, виклики MCP праворуч. Панель сценаріїв більше НЕ
+     накладка: вона нічого не затінює й не блокує — запустив сценарій і одразу
+     бачиш, як він іде, не закриваючи нічого. -->
+<div class="shell live l" id="shell">
 
   <aside class="side l" id="side-left">
     <div class="dhead">
       <div class="t" style="flex:1;min-width:0"><h2>Сценарії</h2>
         <div class="soft">Та сама фраза, яку сказала б людина</div></div>
-      <button class="iconbtn sm plain" onclick="closePanels()" title="Сховати"></button>
     </div>
     <div class="dbody">
       <div class="viewswitch" style="margin-bottom:12px">
@@ -36,18 +37,14 @@
   <main class="main">
     <div class="appwrap">
       <div class="appframe chat">
+        <!-- У шапці застосунку лишились назва й озвучення. Кошик і профіль
+             живуть у нижній навігації, і дублювати їх зверху немає сенсу;
+             грибниця — на сторінці профілю, де їй і місце. -->
         <div class="appbar">
-          <button class="iconbtn sm plain" id="btn-left" onclick="togglePanel('l')"
-            title="Сценарії" aria-pressed="false"></button>
-          <span class="mushroom"></span>
-          <span class="ttl">Машрум Геннадійович</span>
-          <a class="iconbtn sm plain" href="/game" title="Грибниця" id="ab-game"></a>
-          <a class="iconbtn sm plain" href="/profile" title="Профіль" id="ab-user"></a>
+          <img class="mush" src="/mushroom.png" alt="" width="34" height="34">
+          <span class="ttl">Машрум Генадійович</span>
           <button class="iconbtn sm plain" id="btn-tts" onclick="toggleTts()"
             title="Озвучувати відповіді" aria-pressed="false"></button>
-          <button class="iconbtn sm plain" title="Про асистента" onclick="about()" id="ab-info">i</button>
-          <button class="iconbtn sm plain" id="btn-right" onclick="togglePanel('r')"
-            title="Кошик «Сільпо»" aria-pressed="false"></button>
         </div>
 
         <div class="appbody" id="tab-chat">
@@ -55,7 +52,23 @@
           <div class="quicks" id="quicks"></div>
         </div>
 
-        <div class="appbody" id="tab-cart" hidden><div id="cart" class="muted">—</div></div>
+        <!-- Кошик — окрема сторінка застосунку, а не бічна панель: у «Сільпо»
+             він теж окремий екран у нижній навігації. -->
+        <div class="appbody" id="tab-cart" hidden>
+          <div class="cartpage">
+            <div class="dhead" style="padding:0 0 10px">
+              <div class="t" style="flex:1"><h2 style="font-size:17px">Кошик «Сільпо»</h2></div>
+              <button class="iconbtn sm plain" onclick="renderCart($('#cart'))"
+                title="Оновити" id="cart-refresh"></button>
+            </div>
+            <div id="cart" class="muted">—</div>
+            <div id="payment" style="margin-top:14px"></div>
+            <section class="card" style="margin-top:14px">
+              <h3>Згорають сьогодні</h3>
+              <div id="expiring" class="muted">—</div>
+            </section>
+          </div>
+        </div>
 
         <div class="appfoot" id="foot-chat">
           <div class="sendbar">
@@ -71,21 +84,18 @@
     </div>
   </main>
 
+  <!-- Праворуч — те, що відбувається насправді: кожен виклик MCP з аргументами
+       й відповіддю, зверху вниз, і рядки від локальної моделі. Це не декор:
+       саме тут видно, що число на екрані виведене з API, а не вигадане. -->
   <aside class="side r" id="side-right">
     <div class="dhead">
-      <div class="t" style="flex:1;min-width:0"><h2>Кошик «Сільпо»</h2>
-        <div class="soft">Справжній кошик акаунта</div></div>
-      <button class="iconbtn sm plain" onclick="renderCart($('#cart-side'))"
-        title="Оновити" id="cart-refresh"></button>
-      <button class="iconbtn sm plain" onclick="closePanels()" title="Сховати"></button>
+      <div class="t" style="flex:1;min-width:0"><h2>Що відбувається</h2>
+        <div class="soft" id="live-note">виклики MCP наживо</div></div>
+      <button class="iconbtn sm plain" onclick="clearLive()" title="Очистити"
+        id="live-clear"></button>
     </div>
-    <div class="dbody">
-      <div id="cart-side" class="muted">—</div>
-      <div id="payment" style="margin-top:14px"></div>
-      <section class="card" style="margin-top:14px">
-        <h3>Згорають сьогодні</h3>
-        <div id="expiring" class="muted">—</div>
-      </section>
+    <div class="dbody live" id="livefeed" data-empty="yes">
+      <p class="soft">Запусти сценарій — і тут піде ланцюг викликів.</p>
     </div>
   </aside>
 
@@ -95,13 +105,25 @@
 <dialog id="quiz"><div id="quiz-body"></div></dialog>
 
 <script src="/app.js"></script>
+<script src="/ava.js"></script>
 <script>
 let CHAT = [];
-const QUICKS = ['Повтори останній чек', 'Що в мене закінчилось',
-                'Вечеря на 400 грн', 'Скільки я зекономив'];
-// Підказки міняються, щойно з'явився пак: далі корисніше правити його словами.
-var QUICKS_PACK = ['Прибери пакет', 'Додай молоко', 'Заміни чипси на дешевше',
-                   'Поклади в кошик'];
+// Порожній чат починається без кнопок-заготовок: сценарії живуть у панелі
+// ліворуч, а тут гість або пише сам, або отримує підказки вже під паком.
+// Підказки під паком — про ЦЕЙ пак: «заміни чипси», коли чипсів у паку немає,
+// виглядало як заготовка, а не як допомога.
+var QUICKS_PACK = p => {
+  const items = (p && p.items) || [];
+  const word = i => ((items[i] || {}).name || '').replace(/[«»"]/g, '').split(' ')[0];
+  const first = word(0), last = word(items.length - 1);
+  return [
+    last ? `Прибери ${last.toLowerCase()}` : 'Прибери останнє',
+    'Додай молоко',
+    first ? `Заміни ${first.toLowerCase()} на дешевше` : 'Заміни щось на дешевше',
+    'Поклади в кошик',
+    'Перевір перед оформленням',
+  ];
+};
 
 function appTab(name){
   // Вкладок дві: розмова (в ній же паки) і справжній кошик «Сільпо».
@@ -111,14 +133,26 @@ function appTab(name){
   });
   $('#foot-chat').hidden = name !== 'chat';
   document.querySelectorAll('#nav .appnav button').forEach((b, i) =>
-    b.setAttribute('aria-selected', ['chat','cart'][i] === name));
-  if (name === 'cart') renderCart($('#cart'));
+    b.setAttribute('aria-selected', ['chat','cart','profile'][i] === name));
+  if (name === 'cart') { renderCart($('#cart')); payment(); }
 }
 
 function bubble(who, text, opts){
   const cls = who === 'me' ? 'you' : who === 'tools' ? 'sys' : 'bot';
-  $('#log').insertAdjacentHTML('beforeend', `<div class="msg ${cls}">${text}</div>`);
-  $('#log').scrollTop = $('#log').scrollHeight;
+  const log = $('#log');
+  // Репліка агента починає «хід»: ліворуч — живий Машрум. Наступні його
+  // репліки поспіль ідуть без аватара, вирівняні під першою.
+  const prev = log.lastElementChild;
+  const cont = cls === 'bot' && prev && prev.classList.contains('turn');
+  if (cls === 'bot' && !cont) {
+    log.insertAdjacentHTML('beforeend',
+      `<div class="turn"><div class="mash" role="img" aria-label="Машрум Генадійович"></div>
+         <div class="msg bot">${text}</div></div>`);
+    if (typeof mountAva === 'function') mountAva(log.lastElementChild.querySelector('.mash'));
+  } else {
+    log.insertAdjacentHTML('beforeend', `<div class="msg ${cls}${cont ? ' cont' : ''}">${text}</div>`);
+  }
+  scrollChat();
   // Вголос ідуть лише відповіді агента: власні репліки гість щойно набрав,
   // а «→ pack_remove» слухати нема сенсу. `silent` — для індикатора роботи,
   // який ще не є відповіддю.
@@ -132,57 +166,145 @@ async function send(){
   bubble('me', text);
   CHAT.push({role:'user', content:text});
   const t = thinking();
-  const r = await api('/api/chat', 'POST', { messages: CHAT });
-  if (r.error) { t.fail(r.error); return; }
-  // Рядок про виклики tools ставимо ПЕРЕД індикатором, щоб він не перестрибував
-  // через відповідь, коли та зʼявиться.
-  if (r.tools_used?.length)
-    t.el.insertAdjacentHTML('beforebegin',
-      `<div class="msg sys">→ ${r.tools_used.map(x => x.name).join(' · ')}</div>`);
+  liveGroup('Запит у чаті: «' + text.slice(0, 40) + '»');
+  liveStep('локальна модель визначає намір…');
+  // Пак на екрані їде разом із повідомленням: «прибери каву» — з цього пака.
+  const r = await api('/api/chat', 'POST', { messages: CHAT,
+    pack_id: (typeof PACK !== 'undefined' && PACK) ? PACK.id : null });
+  if (r.error) { liveStep(r.error, 'bad'); t.fail(r.error); return; }
+  if (r.model) liveStep(`${r.model}: ${(r.reply || '').slice(0, 120)}`, 'llm');
+  else if (r.why) liveStep(`правило: ${r.why}`, 'llm');
   const reply = r.reply || 'Готово.';
   await t.finish(reply);
   CHAT.push({role:'assistant', content:reply});
-  // Пак додається в ту саму стрічку — під відповіддю агента.
+  // Пак додається в ту саму стрічку — під відповіддю агента; перевірка перед
+  // оформленням — карткою на чотири рядки.
   if (r.result?.items) renderPack(r.result);
+  else if (r.result?.checks) renderPrecheck(r.result);
+  else if (r.result?.categories && r.result?.headline) renderSpend(r.result);
+  else if (r.result?.proposal) renderCrewProposal(r.result.proposal);
+  else if (r.result?.options && r.result?.radius_km != null) renderDelivery(r.result);
 }
 function quick(q){ $('#ask').value = q; send(); }
 
-async function about(){
-  sheet('Машрум Геннадійович + Pack Agent',
-    'Що саме додано до наявного асистента', `
-    <p>Машрум радить. Ми даємо йому <b>памʼять</b> — портрет гостя з реальних чеків,
-      <b>руки</b> — запис у справжній кошик, і <b>калькулятор</b> — купони, пороги
-      доставки й Дольок.</p>
-    <p class="soft">Усе працює на офіційному <span class="mono">mcp.silpo.ua</span>.
-      Те, чого в MCP немає, позначено окремо — і в стрічці викликів, і в описі сценарію.</p>
-    <div class="grid2" style="margin-top:12px">
-      <a class="kpi" href="/game" style="text-decoration:none;color:inherit">
-        <b>Грибниця</b><span>рівні, скіни, досягнення з сум чеків</span></a>
-      <a class="kpi" href="/tech" style="text-decoration:none;color:inherit">
-        <b>Під капотом</b><span>усі сценарії, виклики MCP і демо-дані</span></a>
-    </div>
-    <p class="soft" style="margin-top:12px">Оформлення замовлення агент не виконує —
-      доводить до кнопки «Оформити» й зупиняється.</p>`);
+/* ---------- клавіші режиму запису ----------
+   Цифра = крок демо, без миші й набору тексту в кадрі. Фраза «набирається»
+   в полі вводу, як від людини, і йде тим самим шляхом, що й набрана руками;
+   кнопки в картках натискаються за текстом. 1 → 4 — демо «Вечеря на всю
+   сімʼю» до каси; 5 — портрет витрат; 0 — чистий дубль. Список — Alt+K.
+     scenario — картка сценарію (фраза з картки, потім runScenario)
+     say      — фраза в чат
+     click    — кнопка в останній картці за текстом
+     go       — інший екран (режим запису лишається) */
+const REC_KEYS = [
+  ['1', 'Вечеря на всю сімʼю', [
+    [{ scenario: 'family' }],
+    [{ click: 'Все правильно' }],
+  ]],
+  ['2', 'Компанія на один вечір', [
+    [{ say: 'Збираємось компанією на пікнік у суботу' }],
+    [{ click: 'Створити компанію' }],
+    [{ say: 'Запропонуй в компанію з імʼям Пікнік закупку на пікнік' }],
+  ]],
+  // Координати — демо-адреса гостя (Оболонь, 0,8 км до «Сільпо»); сума —
+  // з пака на екрані, щоб пороги доставки рахувались під нього.
+  ['3', 'Топати чи замовити', [
+    [{ scenario: 'geo', body: () => ({ latitude: 50.5187, longitude: 30.4986,
+        cart_total_uah: (typeof PACK !== 'undefined' && PACK && PACK.total_uah) || 700 }) }],
+  ]],
+  ['4', 'Куди йдуть гроші',           [[{ say: 'Куди в мене йдуть гроші?' }]]],
+  ['5', 'Пораховано до кошика', [
+    [{ fn: () => toCart() }, { say: 'Перевір усе перед оформленням' }],
+  ]],
+  ['6', 'Що в мене закінчилось',      [[{ scenario: 'reorder' }]]],
+  ['7', 'Що зникло з холодильника',   [[{ scenario: 'pantry' }]]],
+  ['8', 'Компанія в профілі',         [[{ go: '/profile?crew=latest' }]]],
+  ['9', 'Профіль',                    [[{ go: '/profile' }]]],
+  ['0', 'Чистий дубль',               [[{ reload: true }]]],
+];
+/* Клавіша з кількома натисканнями: 1 → родина, 1 → «Все правильно»;
+   2 → фраза, 2 → «Створити», 2 → закупка. Лічильник — на клавішу. */
+const REC_POS = {};
+let REC_BUSY = false;
+const recSleep = ms => new Promise(r => setTimeout(r, ms));
+async function recType(text){
+  const box = $('#ask');
+  box.value = '';
+  for (const ch of text) { box.value += ch; await recSleep(30 + Math.random() * 50); }
+  await recSleep(280);
 }
+async function recWait(fn, ms = 25000){
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) { if (fn()) return true; await recSleep(300); }
+  return false;
+}
+async function recAct(step){
+  // Чистий дубль — і без компаній: сценарій знову починається з пропозиції.
+  if (step.reload) { await api('/api/crew/clear', 'POST', {}); location.reload(); return; }
+  if (step.go) { nav(step.go); return; }
+  if (step.wait) { await recWait(step.wait); await recSleep(500); return; }
+  if (step.fn) { await step.fn(); await recSleep(600); return; }
+  if (step.click) {
+    const btn = [...document.querySelectorAll('#log button')]
+      .filter(b => b.textContent.includes(step.click)).pop();
+    if (!btn) { toast(`Кнопки «${step.click}» зараз немає на екрані`); return false; }
+    btn.click(); return;
+  }
+  if (step.scenario) {
+    const s = SCENARIOS.find(x => x.id === step.scenario);
+    if (!s) { toast(`Сценарію ${step.scenario} немає`); return false; }
+    await recType(s.phrase);
+    $('#ask').value = '';
+    // Тіло запиту замість діалогу (координати для «топати чи замовити»).
+    const body = typeof step.body === 'function' ? step.body() : step.body;
+    runScenario(s.id, body); return;
+  }
+  if (step.say) { appTab('chat'); await recType(step.say); send(); }
+}
+async function recRun([key, title, presses]){
+  if (REC_BUSY) return;
+  REC_BUSY = true;
+  try {
+    const i = REC_POS[key] || 0;
+    const group = presses[i];
+    REC_POS[key] = (i + 1) % presses.length;
+    for (const step of group) { if (await recAct(step) === false) break; }
+  } finally { REC_BUSY = false; }
+}
+function recKeysSheet(){
+  let el = $('#reckeys');
+  if (el) { el.remove(); return; }
+  el = document.createElement('div');
+  el.id = 'reckeys'; el.className = 'reckeys';
+  el.innerHTML = `<b>Клавіші запису</b>${REC_KEYS.map(([k, t, p]) =>
+    `<div><kbd>${k}</kbd>${t}${p.length > 1 ? ` <span class="soft">· ${p.length} натискання</span>` : ''}</div>`).join('')}
+    <div class="soft">Alt+K — сховати · Alt+R — вийти з запису</div>`;
+  document.body.appendChild(el);
+}
+document.addEventListener('keydown', e => {
+  if (!document.body.classList.contains('rec')) return;
+  if (e.altKey && (e.key === 'k' || e.key === 'л')) { e.preventDefault(); return recKeysSheet(); }
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  const a = document.activeElement;
+  if (a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.value) return;   // людина справді щось набирає
+  const step = REC_KEYS.find(k => k[0] === e.key);
+  if (!step) return;
+  e.preventDefault();
+  recRun(step);
+});
 
 mountTop('home');
 $('#nav').innerHTML = appNav('chat');
-$('#btn-left').innerHTML = icon('panel', 18);
-$('#btn-right').innerHTML = icon('cart', 18);
-$('#ab-game').innerHTML = icon('mushroom', 18);
-$('#ab-user').innerHTML = icon('user', 18);
 $('#cart-refresh').innerHTML = icon('refresh', 17);
+$('#live-clear').innerHTML = icon('close', 17);
 $('#sendbtn').innerHTML = icon('right', 18);
 ttsInit();
-document.querySelectorAll('.side .dhead .iconbtn:not(#cart-refresh)')
-  .forEach(b => b.innerHTML = icon('close', 17));
 
 (async () => {
-  $('#quicks').innerHTML = QUICKS.map(q =>
-    `<button onclick="quick('${q}')">${q}</button>`).join('');
   bubble('it', 'Готовий. Питайте.', { silent: true });
   await Promise.all([loadStatus(), loadAllergies()]);
-  await Promise.all([mountScenarios(), renderCart($('#cart-side')), loadExpiring()]);
+  await Promise.all([mountScenarios(), loadExpiring()]);
+  startLive();
   const s = await api('/api/chat/status');
   $('#chat-note').textContent = s.available
     ? `Модель ${s.model}: намір визначає вона.`
@@ -190,17 +312,22 @@ document.querySelectorAll('.side .dhead .iconbtn:not(#cart-refresh)')
   $('#mode-note').textContent = s.available
     ? 'Кнопка виконує сценарій напряму; «через модель» — тією самою фразою.'
     : 'Модель офлайн: вільний текст розбираю правилами й усе одно виконую сценарій.';
+  // Прийшли з профілю: «Зібрати кошик» компанії або «Що з цього закінчилось»
+  // із комори — сценарій запускається сам, без зайвого кліку.
+  if (CREW_ID) runScenario('crew');
+  const run = new URLSearchParams(location.search).get('run');
+  if (run && SCENARIOS.some(x => x.id === run)) runScenario(run);
+  // З іншої сторінки нижня навігація веде сюди з назвою вкладки.
+  const tab = new URLSearchParams(location.search).get('tab');
+  if (tab && $('#tab-' + tab)) appTab(tab);
 })();
 
 async function loadExpiring(){
   const e = await api('/api/expiring?days=1');
   const all = [...(e.coupons || []), ...(e.promos || [])];
   $('#expiring').innerHTML = all.length
-    ? all.slice(0, 6).map(c => `
-        <div class="ticket"><div class="v" style="background:${c.color || '#2B5CE6'}">
-          ${c.value ?? '•'}</div>
-          <div class="t"><b>${c.about || c.title || '—'}</b>
-            <span>${c.reward || ''}</span></div></div>`).join('')
+    ? all.slice(0, 6).map((c, i) => ticket({ reward: c.reward, text: c.text || c.about || c.title || '—',
+        applies_to: [c.days_left === 0 ? 'сьогодні' : 'завтра'] }, i)).join('')
     : '<span class="soft">Сьогодні нічого не згорає.</span>';
 }
 </script>

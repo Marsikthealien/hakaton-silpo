@@ -13,45 +13,33 @@
       <div class="appbar">
         <a class="iconbtn sm plain" href="/" title="Назад" id="ab-back"></a>
         <span class="ttl">Профіль</span>
-        <a class="iconbtn sm plain" href="/game" title="Грибниця" id="ab-game"></a>
       </div>
 
       <div class="pagebody">
         <div class="cols profile">
           <div class="col">
+            <!-- Акційне — завжди спершу; окремого перемикача в профілі немає. -->
             <section class="card"><div id="portrait"><div class="muted">Читаю акаунт «Сільпо»…</div></div></section>
-
-            <section class="card">
-              <h3>Як підбирати</h3>
-              <label class="toggle">
-                <input type="checkbox" id="bonus" onchange="saveToggle()">
-                <span class="track"></span>
-                <span class="lbl"><b>Пропонувати відразу з бонусами</b>
-                  <span>Серед відповідних товарів агент братиме ті, на які діє знижка,
-                    мультипак або персональне промо. Діє на всі сценарії.</span></span>
-              </label>
-            </section>
           </div>
 
           <div class="col">
             <!-- Усе про смаки й обмеження — в одному місці й за іконками.
                  Раніше це були пʼять карток на різній висоті. -->
             <section class="card">
-              <div class="head"><div class="t"><h2>Смаки й обмеження</h2>
-                <div class="soft">Те, чим агент керується під час підбору. Дієти — з акаунта
-                  «Сільпо», решта — наша: у MCP таких полів немає</div></div></div>
+              <div class="head"><div class="t"><h2>Смаки й обмеження</h2></div></div>
               <div class="iconrow" id="prefs-tiles"></div>
 
-              <h3 style="margin-top:20px">Департамент дивинок</h3>
-              <p class="soft" style="margin:0 0 10px">Свайп вправо — в «Обране» «Сільпо».
-                Свайп уліво памʼятаємо ми: в API місця для відмови немає. Кожен свайп
-                рухає вагу товару <b>і його полиці</b></p>
-              <div id="deck"><button class="go" onclick="loadDeck($('#deck'))">Почати</button></div>
+              <!-- Департамент дивинок: банер у кольорах самого відділу — свайпи
+                   вправо/вліво по нових товарах. Картки зʼявляються на його місці. -->
+              <div class="deptbox">
+                <div class="dh"><b>Департамент дивинок</b>
+                  <span>нові товари: вправо — подобається, вліво — ні</span></div>
+                <div id="deck"><button class="go light" onclick="loadDeck($('#deck'))">Почати</button></div>
+              </div>
             </section>
 
             <section class="card">
-              <div class="head"><div class="t"><h2>Останні чеки</h2>
-                <div class="soft">Джерело всього: досвіду, звичок, циклів і аналітики</div></div></div>
+              <div class="head"><div class="t"><h2>Останні чеки</h2></div></div>
               <div id="receipts" class="muted">—</div>
             </section>
           </div>
@@ -71,6 +59,10 @@
 const EQUIP = ['сковорідка','каструля','духовка','аерогриль','мікрохвильовка',
                'блендер','тостер','мультиварка','гриль'];
 let PROFILE = {}, FACTS = [], FAMILY = null, ME = null, WEIGHTS = null, CONN = null;
+/* Компанії — окремі обʼєкти, а не «остання компанія». Імена з префіксом
+   `crews*`, бо app.js уже тримає `CREW`, `crewJoin`, `crewPack` тощо для
+   чату, а обидва скрипти живуть в одному глобальному просторі. */
+let CREWS = null, PANTRY = null;
 const tags = (list, cls='') => (list||[]).length
   ? list.map(x => `<span class="tag ${cls}">${x}</span>`).join('')
   : '<span class="soft">порожньо</span>';
@@ -86,16 +78,37 @@ async function loadPortrait(){
     <div class="who"><div class="ava">${(me.name||'?')[0]}</div>
       <div style="flex:1;min-width:0"><div class="nm">${me.name||'Гість'}</div>
         <div class="muted">«${me.card||'—'}» · ${uah(me.bonuses_uah)} балобонусів</div></div>
-      ${bad(g) ? '' : `<a class="lvlbadge" href="/game" title="Грибниця: ${g.level} рівень">
+      ${bad(g) ? '' : `<a class="lvlbadge" href="${withRec('/game')}" title="Грибниця: ${g.level} рівень">
         <span class="n">${g.level}</span><span class="s">${icon('mushroom', 16)}</span></a>`}</div>
     <div class="grid2">
       <div class="kpi"><b>${uah(r.spent_uah)} ₴</b><span>за ${r.count||0} чеків</span></div>
       <div class="kpi good"><b>${uah(r.saved_uah)} ₴</b><span>зекономлено на знижках</span></div>
       <div class="kpi"><b>${uah(r.avg_check_uah)} ₴</b><span>середній чек</span></div>
-      <div class="kpi"><b>${(me.habits||[]).length}</b><span>звичок розпізнано</span></div>
+      <button class="kpi tapkpi" onclick="openSpend()" id="kpi-spend">
+        <b>${SPEND ? SPEND.categories.length + ' розділів' : '…'}</b><span>куди йдуть гроші →</span></button>
     </div>
     <p class="soft" style="margin:10px 0 0">Найчастіше: ${r.favourite_shop||'—'}</p>`;
   renderTiles();
+}
+
+/* ---------- портрет витрат ---------- */
+/* Той самий портрет, що в чаті: смужки по розділах за пів року, тап по
+   розділу — що саме. Тут він живе постійно, а не лише як відповідь. */
+let SPEND = null;
+async function loadSpend(){
+  const d = await api('/api/spend');
+  if (d && d.categories) SPEND = d;
+  const k = $('#kpi-spend b');
+  if (k && SPEND) k.textContent = SPEND.categories.length + ' розділів';
+}
+async function openSpend(){
+  if (!SPEND) await loadSpend();
+  if (!SPEND) return toast('Чеків для портрета немає');
+  sheet('Куди йдуть гроші', 'Пів року по розділах — і що саме в кожному',
+    spendHtml(SPEND, { title: false }) +
+    `<p class="soft" style="margin:12px 0 0">Гостю — відповідь на питання, якого досі не було.
+      Бізнесу — портрет клієнта для персональних пропозицій. Розділ визначено за назвою
+      товару: <span class="mono">categoryId</span> у картці немає.</p>`);
 }
 
 /* ---------- іконки, що відкривають модалки ---------- */
@@ -104,16 +117,17 @@ function renderTiles(){
   const likes = (PROFILE.likes||[]).length + (PROFILE.dislikes||[]).length;
   const equip = (PROFILE.equipment||[]).length;
   const fam = FAMILY ? (FAMILY.members||[]).length + (FAMILY.pets||[]).length : '·';
-  const habits = ME ? (ME.habits||[]).length : '·';
   const conn = CONN ? (CONN.connectors||[]).filter(c => c.connected).length : '·';
   const rows = [
     ['ban',     'Алергії',        'жорстке виключення', allerg, 'openAllergies()', allerg ? 'warn' : ''],
     ['heart',   'Вподобання',     'смаки й ваги',       likes,  'openLikes()',     ''],
     ['family',  'Моя сімʼя',      'склад із «Сільпо»',  fam,    'openFamily()',    ''],
-    ['pan',     'Техніка',        'що є на кухні',      equip,  'openEquip()',     ''],
-    ['cycle',   'Беру регулярно', 'цикл із чеків',      habits, 'openHabits()',    ''],
-    ['brain',   'Памʼять',        'факти з розмов',     FACTS.length, 'openFacts()', ''],
-    ['plug',    'Джерела даних',  'холодильник, трекери', conn, 'openConnectors()', ''],
+    ['crew',    'Компанії',       'разові групи під подію', CREWS ? CREWS.length : '·',
+                                                             'openCrews()',     ''],
+    ['fridge',  'Що є удома',     'полиця й техніка',   PANTRY ? (PANTRY.count || 0) + equip : '·',
+                                                             'openHome()',
+                                  PANTRY && PANTRY.expired ? 'warn' : ''],
+    ['plug',    'Трекери',        'холодильник, сон, настрій', conn, 'openConnectors()', ''],
   ];
   $('#prefs-tiles').innerHTML = rows.map(([ic, title, sub, n, act, cls]) => `
     <button class="tile" onclick="${act}"><span class="em">${icon(ic, 22)}</span>
@@ -122,18 +136,13 @@ function renderTiles(){
 }
 
 function openAllergies(){
-  sheet('Чого тобі не можна', 'Алергія — не дієта: порушив, і це швидка', `
-    <p class="soft" style="margin:0 0 10px">«Сільпо» зберігає девʼять харчових
-      категорій у «Просторі вподобань», але <b>поля для алергії немає ніде</b> —
-      ні в застосунку, ні на сайті, ні в API. Це памʼятаємо ми.</p>
+  sheet('Чого тобі не можна', '', `
     <label>Алергени, через кому</label>
     <input id="s-allerg" value="${(PROFILE.allergies||[]).join(', ')}" placeholder="горіхи, лактоза">
     <div class="chips" style="margin-top:10px">${tags(PROFILE.allergies, 'stop')}</div>
     <h3>Дієти з акаунта «Сільпо»</h3>
     <div class="chips">${tags(ME && ME.diets_from_silpo)}</div>
-    <p class="soft" style="margin:10px 0 0">Перевірка йде по кореню слова: «мак» не
-      блокує «зі смаком», але блокує «рулет з маком». Складу товару MCP не віддає,
-      тож перед покупкою варто глянути етикетку.</p>
+
     <button class="go" style="width:100%;margin-top:12px" onclick="saveAllergies()">Зберегти</button>`);
 }
 async function saveAllergies(){
@@ -155,9 +164,7 @@ function likesHtml(){
     <button class="go" style="width:100%;margin-top:12px" onclick="saveLikes()">Зберегти</button>
 
     <div class="head" style="margin-top:20px"><div class="t">
-      <h3 style="margin:0">Ваги смаку</h3>
-      <div class="soft">Те саме, але пораховане: росте від покупок і свайпів вправо,
-        падає від замін і свайпів уліво. Відʼємна вага — мʼяка нелюбов, не алергія</div></div>
+      <h3 style="margin:0">Ваги смаку</h3></div>
       <button class="go ghost" onclick="rebuildWeights()">Перерахувати</button></div>
     <p class="soft" style="margin:0 0 10px">Відстежується товарів: ${w.tracked_products ?? '—'}</p>
     ${(w.categories||[]).slice(0,8).map(c => `<div class="habit" style="border:0;padding:5px 0">
@@ -177,13 +184,13 @@ function likesHtml(){
 }
 async function openLikes(){
   if (!WEIGHTS) WEIGHTS = await api('/api/weights');
-  sheet('Вподобання', 'Мʼякий сигнал: впливає на порядок, але нікого не виключає', likesHtml());
+  sheet('Вподобання', '', likesHtml());
 }
 async function saveLikes(){
   await api('/api/profile','POST',{likes: csv($('#s-likes').value),
     dislikes: csv($('#s-dis').value), mode:'replace'});
   toast('Оновив'); await loadPrefs();
-  sheetReplace('Вподобання', 'Мʼякий сигнал: впливає на порядок, але нікого не виключає', likesHtml());
+  sheetReplace('Вподобання', '', likesHtml());
 }
 async function rebuildWeights(){
   toast('Перечитую чеки…');
@@ -191,7 +198,7 @@ async function rebuildWeights(){
   if(bad(r)) return;
   WEIGHTS = r;
   toast(`Пораховано з ${r.built_from.receipts} чеків, ${r.built_from.lines} позицій`);
-  sheetReplace('Вподобання', 'Мʼякий сигнал: впливає на порядок, але нікого не виключає', likesHtml());
+  sheetReplace('Вподобання', '', likesHtml());
 }
 
 function openEquip(){
@@ -206,6 +213,8 @@ async function toggleEquip(item){
   have.has(item) ? have.delete(item) : have.add(item);
   await api('/api/profile','POST',{equipment:[...have], mode:'replace'});
   await loadPrefs();
+  const box = $('#equip-chips');
+  if (box) { box.innerHTML = equipChips(); return; }
   const now = PROFILE.equipment || [];
   sheetReplace('Техніка на кухні',
     'Рецепти, які вимагають того, чого в тебе немає, не пропонуються',
@@ -217,7 +226,7 @@ async function toggleEquip(item){
 async function openFamily(){
   const f = FAMILY || (FAMILY = await api('/api/family'));
   if(bad(f)) return;
-  sheet('Моя сімʼя', 'Склад — із «Сільпо». Смаки кожного MCP поки не віддає', `
+  sheet('Моя сімʼя', '', `
     ${f.members.map(m => `
       <div class="habit"><b>${m.name} <span class="soft">· ${m.role}${
         m.age ? ', ' + m.age + ' р.' : ''}</span></b>
@@ -233,24 +242,30 @@ async function openFamily(){
 }
 function editMember(id, name){
   // Модалка з модалки: у шапці зʼявиться «назад» до складу родини.
+  // Імʼя тут не зайве поле: get_my_family віддає його лише для тих, хто сам
+  // його заповнив, — другий дорослий приходить із name:null. А «без арахісу,
+  // бо без імені» не пояснює нічого.
   sheet(name, 'Поки MCP не віддає «Простір вподобань», записуємо в себе', `
+    <label>Імʼя <span class="soft">— якщо «Сільпо» його не віддає</span></label>
+    <input id="m-name" placeholder="${name}" value="${name === 'без імені' ? '' : name}">
     <label>Любить</label><input id="m-likes" placeholder="паста, суші">
     <label>Не можна</label><input id="m-all" placeholder="арахіс">
     <button class="go" style="width:100%;margin-top:12px" onclick="saveMember('${id}')">Зберегти</button>`);
 }
 async function saveMember(id){
-  await api('/api/family/member','POST',{member_id:id,
+  const name = ($('#m-name') || {}).value;
+  await api('/api/family/member','POST',{member_id:id, name:(name || '').trim() || null,
     likes:csv($('#m-likes').value), allergies:csv($('#m-all').value)});
   FAMILY = null; toast('Записав');
   SHEETS.pop(); await openFamily();
 }
 async function familyDinnerFromSheet(){
   closeSheet(); toast('Збираю з поправкою на чиїсь алергії…');
-  const p = await api('/api/pack/family','POST',{theme:'вечеря', max_uah:900});
+  const p = await api('/api/pack/family','POST',{theme:'вечеря', max_uah:1500});
   if(bad(p)) return;
   toast(`${p.name}: ${p.item_count} поз. на ${uah(p.total_uah)} ₴` +
     ((p.blocked_for_everyone||[]).length ? ` · без ${p.blocked_for_everyone.join(', ')}` : ''));
-  location.href = '/';
+  nav('/');
 }
 
 function openHabits(){
@@ -262,7 +277,7 @@ function openHabits(){
         <span class="soft"> · впевненість ${x.confidence}</span></div>`).join('')
       : '<span class="soft">Замало повторів у чеках.</span>'}
     <button class="go" style="width:100%;margin-top:12px"
-      onclick="closeSheet();location.href='/'">Зібрати те, що закінчилось →</button>`);
+      onclick="closeSheet();nav('/')">Зібрати те, що закінчилось →</button>`);
 }
 
 function openFacts(){
@@ -273,22 +288,28 @@ function openFacts(){
 }
 
 async function openConnectors(){
-  const d = CONN || (CONN = await api('/api/connectors'));
-  sheet('Джерела даних',
-    '«Сільпо» не знає, що ти не спав; трекер не знає про твою алергію. Зшиває агент', `
+  // Читаємо заново: значення полів змінюються від перемикача, і показувати
+  // старий знімок тут було б гірше, ніж не показувати нічого.
+  const d = CONN = await api('/api/connectors');
+  sheet('Трекери', '', `
     ${(d.connectors||[]).map(c => `
       <div class="conn"><div class="ic">${icon(c.icon, 20)}</div>
-        <div class="t"><b>${c.name}</b><span>${c.kind} · ${c.gives}</span></div>
+        <div class="t"><b>${c.name}</b><span>${c.kind}</span></div>
         <label class="toggle" style="padding:0">
           <input type="checkbox" ${c.connected?'checked':''}
             onchange="toggleConn('${c.id}',this.checked)">
-          <span class="track"></span></label></div>`).join('')}
-    <p class="soft" style="margin:10px 0 0">${d.spec || ''}</p>`);
+          <span class="track"></span></label></div>
+      <div class="fields">${(c.fields||[]).map(f => `
+        <div class="fld ${f.value ? 'on' : ''} ${f.used ? '' : 'idle'}">
+          <span class="k">${uiEsc(f.title)}</span>
+          <span class="v">${f.value ? uiEsc(f.value)
+            : (c.connected ? '<i>джерело нічого не дало</i>' : '<i>не підключено</i>')}</span>
+        </div>`).join('')}</div>`).join('')}`);
 }
 async function toggleConn(id, on){
   await api('/api/connect','POST',{source:id, on});
-  CONN = await api('/api/connectors');
   toast(on ? 'Підключено — дані демонстраційні' : 'Відключено');
+  await openConnectors();          // перемальовуємо: значення полів змінились
   renderTiles();
 }
 
@@ -296,13 +317,211 @@ async function loadPrefs(){
   const d = await api('/api/preferences');
   PROFILE = d.profile || {};
   FACTS = d.facts || [];
-  $('#bonus').checked = !!PROFILE.bonus_first;
   ALLERGIES = [...(PROFILE.allergies||[]), ...(PROFILE.dislikes||[])];
   renderTiles();
 }
-async function saveToggle(){
-  await api('/api/profile','POST',{bonus_first: $('#bonus').checked});
-  toast($('#bonus').checked ? 'Тепер спершу шукаю акційне' : 'Підбираю без огляду на акції');
+/* ============================ Компанії ============================
+   Разова група під подію: зібрались, кожен кинув своє, поїхали,
+   розрахувались, розійшлись. Це НЕ «сімейна група» «Сільпо» — там сталий
+   звʼязок акаунтів зі спільними бонусами, тут вечір. Тому компанії живуть
+   окремими обʼєктами: список, картка кожної, і кнопка прибрати. */
+async function loadCrews(){
+  const d = await api('/api/crews');
+  CREWS = d.crews || [];
+  renderTiles();
+}
+
+const crewsCount = c => (c.members || []).length;
+const crewsAllergens = c => [...new Set((c.members || [])
+  .flatMap(m => m.allergies || []))];
+const crewsWishes = c => (c.members || []).reduce((n, m) => n + (m.suggests || []).length, 0);
+
+async function openCrews(){
+  // Читаємо заново щоразу: компанію могли створити або прибрати в іншій
+  // вкладці, а `sheetBack()` показує знімок розмітки, а не свіжі дані.
+  await loadCrews();
+  const list = CREWS || [];
+  sheet('Компанії', '', `
+    ${list.length ? list.map(c => `
+      <button class="crewrow" onclick="openCrewCard('${c.id}')">
+        <b>${uiEsc(c.title)}</b>
+        <span class="soft">${uiEsc(c.occasion || 'подія')} · ${crewsCount(c)} осіб
+          · ${crewsWishes(c)} пропозицій${crewsAllergens(c).length
+            ? ' · <span style="color:var(--red)">' + crewsAllergens(c).length + ' алергій</span>'
+            : ''}</span>
+        <span class="soft">створено ${uiEsc(c.created_at || '')}</span>
+      </button>`).join('')
+      : '<p class="soft">Жодної компанії ще немає.</p>'}
+    <h3 style="margin-top:16px">Нова компанія</h3>
+    <div class="filters">
+      <input id="cw-title" placeholder="Пікнік на Трухановому">
+      <input id="cw-occ" value="пікнік" placeholder="привід" style="max-width:150px"></div>
+    <button class="go" style="width:100%;margin-top:12px" onclick="crewsNew()">Створити</button>`,
+    { redraw: 'openCrews' });
+}
+
+async function crewsNew(){
+  const title = ($('#cw-title').value || '').trim() || 'Компанія';
+  const r = await api('/api/crew/create', 'POST',
+    { title, occasion: ($('#cw-occ').value || 'подія').trim(), demo: true });
+  if (bad(r)) return;
+  await loadCrews();
+  toast('Компанію створено');
+  openCrewCard(r.crew.id);
+}
+
+async function openCrewCard(id){
+  const d = await api('/api/crew?crew_id=' + encodeURIComponent(id));
+  if (bad(d) || !d.crew) return toast('Компанію не знайшов');
+  const c = d.crew, blocked = d.blocked_for_everyone || [];
+  sheet(c.title, `${c.occasion || 'подія'} · ${(d.members||[]).length} осіб`, `
+    ${inviteHtml(c)}
+    ${blocked.length ? `<div class="warn" style="margin:0 0 12px">
+      Виключено для всієї компанії: <b>${uiEsc(blocked.join(', '))}</b></div>` : ''}
+    ${(d.diets||[]).length ? `<p class="soft" style="margin:0 0 10px">Дієти:
+      ${d.diets.map(x => uiEsc(x.term) + ' (' + uiEsc(x.who) + ')').join(' · ')}</p>` : ''}
+
+    ${(d.members||[]).map(m => `<div class="habit">
+      <b>${uiEsc(m.name)} <span class="soft">· ${uiEsc(m.role || 'гість')}</span></b>
+      <div>${(m.allergies||[]).length
+        ? '<span style="color:var(--red)">алергія: ' + uiEsc((m.allergies||[]).join(', ')) + '</span>'
+        : '<span class="soft">алергій не вказав</span>'}${
+        (m.diets||[]).length ? ' · ' + uiEsc((m.diets||[]).join(', ')) : ''}</div>
+      <div class="chips" style="margin-top:5px">${
+        (m.suggests||[]).map(x => `<span class="tag">${uiEsc(x)}</span>`).join('')
+        || '<span class="soft">нічого не запропонував</span>'}</div>
+      <div class="soft" style="margin-top:4px">заплатив ${(+m.paid_uah||0).toFixed(2)} ₴ ·
+        <a href="#" onclick="crewsPaid('${c.id}','${uiEsc(m.name)}');return false">змінити</a> ·
+        <a href="#" onclick="crewsDrop('${c.id}','${uiEsc(m.name)}');return false">прибрати</a></div>
+    </div>`).join('')}
+
+    <h3 style="margin-top:16px">Покликати ще</h3>
+    <div class="filters"><input id="cm-name" placeholder="імʼя"></div>
+    <div class="filters" style="margin-top:6px">
+      <input id="cm-alg" placeholder="алергії через кому">
+      <input id="cm-diet" placeholder="дієта" style="max-width:150px"></div>
+    <div class="filters" style="margin-top:6px">
+      <input id="cm-sug" placeholder="що пропонує взяти, через кому"></div>
+    <button class="go ghost" style="width:100%;margin-top:8px"
+      onclick="crewsAdd('${c.id}')">Додати учасника</button>
+
+    <div class="filters" style="margin-top:16px">
+      <button class="go" style="flex:1" onclick="crewsGoPack('${c.id}')">Зібрати кошик</button>
+      <button class="go ghost" onclick="crewsSplit('${c.id}')">Розділити чек</button></div>
+    <button class="go ghost" style="width:100%;margin-top:8px;color:var(--red)"
+      onclick="crewsRemove('${c.id}')">Прибрати компанію</button>`);
+}
+
+async function crewsAdd(id){
+  const name = ($('#cm-name').value || '').trim();
+  if (!name) return toast('Без імені не додам');
+  const r = await api('/api/crew/join', 'POST', { crew_id: id, name,
+    allergies: csv($('#cm-alg').value), diets: csv($('#cm-diet').value),
+    suggests: csv($('#cm-sug').value) });
+  if (bad(r)) return;
+  await loadCrews(); toast(name + ' у компанії'); openCrewCard(id);
+}
+
+async function crewsDrop(id, name){
+  const r = await api('/api/crew/leave', 'POST', { crew_id: id, name });
+  if (bad(r)) return;
+  await loadCrews(); openCrewCard(id);
+}
+
+function crewsPaid(id, name){
+  const sum = prompt(`Скільки заплатив(ла) ${name}?`, '0');
+  if (sum === null) return;
+  api('/api/crew/paid', 'POST', { crew_id: id, name, amount_uah: +sum || 0 })
+    .then(r => { if (!bad(r)) openCrewCard(id); });
+}
+
+async function crewsRemove(id){
+  const r = await api('/api/crew/delete', 'POST', { crew_id: id });
+  if (bad(r)) return;
+  await loadCrews(); closeSheet(); toast('Компанію прибрано'); openCrews();
+}
+
+/* Кошик збирається на головному екрані — там живе пак і кнопка «у кошик
+   «Сільпо»». Передаємо, яку саме компанію брати. */
+function crewsGoPack(id){ nav('/?crew=' + encodeURIComponent(id)); }
+
+async function crewsSplit(id){
+  const sum = prompt('Сума до розподілу, ₴ (візьми з кошика або з чека):', '');
+  if (sum === null) return;
+  const r = await api('/api/crew/split', 'POST', { crew_id: id, total_uah: +sum || 0 });
+  if (bad(r)) return;
+  SPLIT_TOTAL = +sum || 0; SPLIT_CREW = id;
+  sheet('Розділити на компанію', '', splitHtml(r));
+}
+
+/* ============================ Комора ============================
+   Досі її не було видно ніде: трекер звітував «5 позицій», а які саме —
+   ніде. `pantry_missing` показував лише те, чого БРАКУЄ. Тепер це
+   повноцінні дані профілю: що лежить, до якої дати, що вже прострочене. */
+async function loadPantry(){
+  PANTRY = await api('/api/pantry/state');
+  renderTiles();
+}
+
+/* Полиця й техніка — одна модалка «Що є удома»: що лежить у холодильнику
+   (не купуємо вдруге) і що є на кухні (рецепти під наявне). */
+const equipChips = () => `<div class="chips">${EQUIP.map(e =>
+  `<button class="fbtn" aria-pressed="${(PROFILE.equipment || []).includes(e)}"
+    onclick="toggleEquip('${e}')">${e}</button>`).join('')}</div>`;
+async function openHome(){
+  const d = PANTRY = await api('/api/pantry/state');
+  const items = d.items || [];
+  sheet('Що є удома', d.source ? `полиця з: ${d.source}${d.at ? ' · ' + d.at : ''}` : '', `
+    <h3 style="margin:0 0 6px">На полиці</h3>
+    ${items.length ? items.map(i => `<div class="habit ${i.expired ? 'due' : ''}">
+      <b>${uiEsc(i.name)}</b>
+      <div class="soft">${i.qty ? i.qty + ' шт · ' : ''}${
+        i.expires ? (i.expired ? '<span style="color:var(--red)">прострочено ' + i.expires + '</span>'
+                               : 'до ' + i.expires) : 'без терміну'}</div>
+    </div>`).join('')
+      : '<p class="soft">Порожньо. Увімкни холодильник у «Трекерах» або впиши руками.</p>'}
+    <div class="filters">
+      <input id="pn-name" placeholder="Молоко «Галичина» 2,5%">
+      <input id="pn-exp" type="date" style="max-width:160px"></div>
+    <button class="go ghost" style="width:100%;margin-top:8px" onclick="pantryAdd()">Покласти на полицю</button>
+    ${items.length ? `<button class="go" style="width:100%;margin-top:8px"
+      onclick="closeSheet();nav('/?run=pantry')">Що з цього закінчилось →</button>` : ''}
+    <h3 style="margin-top:18px">На кухні</h3>
+    <div id="equip-chips">${equipChips()}</div>`,
+    { redraw: 'openHome' });
+}
+async function openPantry(){
+  const d = PANTRY = await api('/api/pantry/state');
+  const items = d.items || [];
+  sheet('Комора', d.source ? `джерело: ${d.source}${d.at ? ' · ' + d.at : ''}`
+                           : 'ще не синхронізовано', `
+    ${items.length ? items.map(i => `<div class="habit ${i.expired ? 'due' : ''}">
+      <b>${uiEsc(i.name)}</b>
+      <div class="soft">${i.qty ? i.qty + ' шт · ' : ''}${
+        i.expires ? (i.expired ? '<span style="color:var(--red)">прострочено ' + i.expires + '</span>'
+                               : 'до ' + i.expires) : 'без терміну'}</div>
+    </div>`).join('')
+      : '<p class="soft">Порожньо. Увімкни холодильник у «Трекерах» або впиши руками.</p>'}
+    <h3 style="margin-top:16px">Додати руками</h3>
+    <div class="filters">
+      <input id="pn-name" placeholder="Молоко «Галичина» 2,5%">
+      <input id="pn-exp" type="date" style="max-width:160px"></div>
+    <button class="go ghost" style="width:100%;margin-top:8px" onclick="pantryAdd()">Покласти на полицю</button>
+    ${items.length ? `<button class="go" style="width:100%;margin-top:8px"
+      onclick="closeSheet();nav('/?run=pantry')">Що з цього закінчилось →</button>` : ''}
+    <p class="soft" style="margin:10px 0 0">${d.spec || ''}</p>`,
+    { redraw: 'openPantry' });
+}
+
+async function pantryAdd(){
+  const name = ($('#pn-name').value || '').trim();
+  if (!name) return toast('Без назви не покладу');
+  const items = [...(PANTRY.items || []).map(i => ({name:i.name, qty:i.qty, expires:i.expires})),
+                 { name, qty: 1, expires: ($('#pn-exp').value || null) }];
+  const r = await api('/api/pantry', 'POST', { items, source: 'вручну' });
+  if (bad(r)) return;
+  toast('Поклав на полицю');
+  openHome();
 }
 
 async function loadReceipts(){
@@ -330,18 +549,26 @@ async function repeat(i){
   const p = await api('/api/pack/from_receipt','POST',{index:i});
   if(bad(p)) return;
   toast(`${p.name}: ${p.item_count} поз. на ${uah(p.total_uah)} ₴`);
-  location.href = '/';
+  nav('/');
 }
 
 mountTop('profile');
 $('#nav').innerHTML = appNav('profile');
 $('#ab-back').innerHTML = icon('back', 18);
-$('#ab-game').innerHTML = icon('mushroom', 18);
+$('#ab-back').href = withRec('/');
 (async () => {
-  await Promise.all([loadStatus(), loadPrefs()]);
+  await Promise.all([loadStatus(), loadPrefs(), loadCrews(), loadPantry()]);
+  // З чату або з клавіші запису: одразу картка компанії — не чекаючи чеків.
+  const want = new URLSearchParams(location.search).get('crew');
+  if (want) {
+    const id = want === 'latest' ? (CREWS.slice().sort((a, b) =>
+      (b.created_at || '').localeCompare(a.created_at || ''))[0] || {}).id : want;
+    if (id) openCrewCard(id); else openCrews();
+  }
   await Promise.all([loadPortrait(), loadReceipts()]);
   [FAMILY, CONN] = await Promise.all([api('/api/family'), api('/api/connectors')]);
   renderTiles();
+  loadSpend();      // портрет рахується з усіх чеків — не тримаємо решту плиток
 })();
 </script>
 </body>

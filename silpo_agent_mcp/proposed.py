@@ -41,9 +41,19 @@ def _save(data: dict) -> None:
 
 
 def _traced(name: str, args: dict):
-    """Контекст-менеджер-подібний хелпер: повертає функцію завершення сліду."""
+    """Повертає функцію завершення сліду: `done(note, result)`.
+
+    `result` — це те, що побачить людина в картці виклику. Без нього слід
+    запропонованого tool показував «Відповідь: порожньо», і на демо було
+    неможливо відповісти на просте питання «а звідки взялись ці смаки?».
+    Повертає той самий `result`, щоб писати `return done(note, result)`.
+    """
     started = time.perf_counter()
-    return lambda note="": silpo.log_proposed(name, args, started, note=note)
+
+    def done(note: str = "", result=None):
+        silpo.log_proposed(name, args, started, note=note, result=result)
+        return result
+    return done
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +131,26 @@ RECIPES = [
      "items": ["лаваш", "соус томатний", "сир моцарела", "салямі", "оливки"],
      "steps": ["Змасти лаваш соусом.", "Виклади начинку, засип сиром.",
                "Запікай 10 хвилин при 200 °C."]},
+    {"id": "pasta-losos", "title": "Паста з лососем у вершках", "meal": "вечеря",
+     "minutes": 25, "equipment": ["каструля", "сковорідка"], "serves": 4,
+     # «сир твердий», а не пармезан: у філії пармезан — це головка за 1 499 ₴
+     # і попкорн «зі смаком», а лосось без «філе» приносить хребти.
+     "items": ["спагеті", "лосось філе", "вершки", "сир твердий", "часник", "масло вершкове"],
+     "steps": ["Відвари спагеті до аль денте.",
+               "Обсмаж лосось шматочками з часником на маслі 4 хвилини.",
+               "Влий вершки, прогрій, змішай із пастою, зверху — тертий пармезан."]},
+    # Дві страви нижче існують, щоб їх ВІДХИЛИЛИ: песто — через горіхи, пад тай —
+    # через арахіс. Відмова з іменем того, чия алергія, — половина сенсу сценарію.
+    {"id": "pasta-pesto", "title": "Паста з песто", "meal": "вечеря", "minutes": 15,
+     "equipment": ["каструля"], "serves": 4,
+     "items": ["спагеті", "базилік", "кедрові горіхи", "сир пармезан", "олія оливкова"],
+     "steps": ["Відвари спагеті.", "Збий базилік, горіхи, пармезан і олію в соус.",
+               "Змішай із гарячою пастою."]},
+    {"id": "pad-thai", "title": "Пад тай із креветками", "meal": "вечеря", "minutes": 30,
+     "equipment": ["сковорідка"], "serves": 2,
+     "items": ["локшина рисова", "креветки", "яйця", "арахіс", "соєвий соус", "лайм"],
+     "steps": ["Замочи локшину.", "Обсмаж креветки з яйцем.",
+               "Додай локшину й соус, посип арахісом."]},
     {"id": "steik", "title": "Стейк із гарніром", "meal": "вечеря", "minutes": 30,
      "equipment": ["сковорідка", "гриль"], "serves": 2,
      "items": ["стейк яловичий", "картопля", "масло вершкове", "розмарин"],
@@ -163,7 +193,7 @@ def find_recipes(query: str | None = None, meal: str | None = None,
 
     terms = expand_avoid(avoid)
     have = [e.lower() for e in (equipment or EQUIPMENT)]
-    found = []
+    found, rejected = [], []
     for recipe in RECIPES + _load().get("family_recipes", []):
         if meal and recipe["meal"] != meal.lower().strip():
             continue
@@ -171,14 +201,25 @@ def find_recipes(query: str | None = None, meal: str | None = None,
                 and not any(query.lower() in i for i in recipe["items"]):
             continue
         if recipe["equipment"] and not any(e in have for e in recipe["equipment"]):
+            rejected.append({"title": recipe["title"], "reason": "обладнання",
+                             "detail": "потрібно: " + ", ".join(recipe["equipment"])})
             continue
-        if any(_blocked_by(i, terms) for i in recipe["items"]):
+        # Відхилену через алергію страву називаємо разом зі складником і
+        # словом, на якому спрацювало: мовчазне зникнення рецепта з видачі
+        # нічим не відрізняється від «такого рецепта немає».
+        hit = next(((i, _blocked_by(i, terms)) for i in recipe["items"]
+                    if _blocked_by(i, terms)), None)
+        if hit:
+            rejected.append({"title": recipe["title"], "reason": "алергія",
+                             "item": hit[0], "term": hit[1]})
             continue
         if serves and recipe["serves"] < serves:
             continue
         found.append(recipe)
-    done(f"{len(found)} рецептів")
-    return {"count": len(found), "recipes": found[:limit],
+    done(f"{len(found)} рецептів, {len(rejected)} відхилено",
+         {"count": len(found), "recipes": [r["title"] for r in found[:limit]],
+          "rejected": rejected})
+    return {"count": len(found), "recipes": found[:limit], "rejected": rejected,
             "equipment_known": EQUIPMENT, "proposed": True,
             "spec": ("Повертає страви з переліком складників у вигляді пошукових запитів "
                      "або артикулів, кроками, часом і потрібним обладнанням. "
@@ -364,6 +405,11 @@ async def also_bought(product_name: str, limit: int = 5) -> dict:
 # ---------------------------------------------------------------------------
 # 4. Вартість доставки без кошика
 # ---------------------------------------------------------------------------
+def _delivery_label(code: str) -> str:
+    from .facade import delivery_label
+    return delivery_label(code)
+
+
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     import math
     r = 6371.0
@@ -442,6 +488,9 @@ async def estimate_delivery(latitude: float, longitude: float,
                 "distance_km": distance,
                 "walk_minutes": round(distance / 5 * 60) if distance is not None else None,
                 "delivery_type": slot_type,
+                # Українська назва разом із кодом: у відповіді API способи
+                # отримання англійські й гостю не кажуть нічого.
+                "label": _delivery_label(slot_type),
                 "cost_uah": cost,
                 "min_order_uah": slot.get("minOrderCost"),
                 "meets_minimum": cart_total_uah >= (slot.get("minOrderCost") or 0),
@@ -463,7 +512,17 @@ async def estimate_delivery(latitude: float, longitude: float,
 # ---------------------------------------------------------------------------
 # 5. Вподобання родини та компанії
 # ---------------------------------------------------------------------------
-async def get_family_preferences() -> dict:
+# Родину читаємо один раз на сценарій. Картка «хто вечеряє» й сам підбір
+# ідуть один за одним, і другий виклик того самого API просто дублював
+# перший у панелі «Що відбувається». Кеш скидає будь-яка правка вподобань.
+_FAMILY_CACHE: dict = {"at": 0.0, "value": None}
+FAMILY_CACHE_TTL = 300
+
+PET_KINDS = {"cats": "кіт", "dogs": "пес", "birds": "птах", "fish": "рибка",
+             "rodents": "гризун"}
+
+
+async def get_family_preferences(fresh: bool = False) -> dict:
     """ЗАПРОПОНОВАНИЙ tool. Смаки та алергії кожного члена родини.
 
     `silpo_get_my_family` віддає склад родини — імена, вік дітей, тварин. Але
@@ -473,6 +532,9 @@ async def get_family_preferences() -> dict:
     Тут реальний склад родини доповнюється тим, що гість вказав у нашому
     застосунку — і одразу видно, чиїх даних бракує.
     """
+    cached = _FAMILY_CACHE["value"]
+    if cached and not fresh and time.time() - _FAMILY_CACHE["at"] < FAMILY_CACHE_TTL:
+        return cached
     done = _traced("silpo_get_family_preferences", {})
     family = await silpo.call("silpo_get_my_family", {})
     stored = _load().get("family_prefs", {})
@@ -486,6 +548,7 @@ async def get_family_preferences() -> dict:
             "id": key, "name": member.get("name") or "без імені", "role": role,
             **(stored[key] if known else _demo_prefs_for(role)),
             "known": known, "demo": not known,
+            "source": PREFS_SOURCE_GUEST if known else PREFS_SOURCE_DEMO,
         })
     for child in family.get("children", []):
         key = child.get("id")
@@ -501,36 +564,52 @@ async def get_family_preferences() -> dict:
             "id": key, "name": child.get("name"), "role": "дитина", "age": age,
             **(stored[key] if known else _demo_prefs_for("дитина")),
             "known": known, "demo": not known,
+            "source": PREFS_SOURCE_GUEST if known else PREFS_SOURCE_DEMO,
         })
-    pets = [{"id": p.get("id"), "name": p.get("name"), "kind": p.get("slug")}
+    pets = [{"id": p.get("id"), "name": p.get("name"), "slug": p.get("slug"),
+             "kind": PET_KINDS.get(p.get("slug"), p.get("slug"))}
             for p in family.get("pets", [])]
 
-    done(f'{len(members)} людей, {len(pets)} тварин')
-    return {
+    result = done(f'{len(members)} людей, {len(pets)} тварин', {
         "members": members, "pets": pets,
         "missing_preferences": [m["name"] for m in members if not m["known"]],
+        # Дві різні речі під одним дахом, і в сліді це має бути видно:
+        # склад — з API, смаки — з нашого сховища, куди їх записав гість.
+        "sources": {"members": "silpo_get_my_family — склад родини з акаунта «Сільпо»",
+                    "preferences": "наш шар: .mcp/proposed.json → family_prefs, "
+                                   "заповнюється гостем у Профіль → Моя сімʼя → заповнити"},
         "proposed": True,
         "spec": ("Має віддавати для кожного члена родини його «Простір вподобань»: "
                  "улюблені категорії, харчові обмеження та алергії. Сьогодні "
                  "get_my_family дає лише склад родини — смаки лишаються в застосунку "
                  "і не доступні агенту. " + SPEC_URL),
-    }
+    })
+    _FAMILY_CACHE.update({"at": time.time(), "value": result})
+    return result
 
 
 def set_member_preferences(member_id: str, likes: list[str] | None = None,
                            avoid: list[str] | None = None,
-                           allergies: list[str] | None = None) -> dict:
-    """Зберігає вподобання члена родини чи гостя компанії (наш бік)."""
+                           allergies: list[str] | None = None,
+                           name: str | None = None) -> dict:
+    """Зберігає вподобання члена родини чи гостя компанії (наш бік).
+
+    `name` тут не примха: `get_my_family` віддає імʼя лише для тих, хто сам
+    його заповнив, — у нашому акаунті другий дорослий приходить із
+    `"name": null`. Підпис «без імені» перетворює пояснення «без арахісу, бо
+    NN» на беззмістовне, тож імʼя для своїх гість дає в нас.
+    """
     done = _traced("silpo_set_member_preferences", {"member_id": member_id})
     data = _load()
     prefs = data.setdefault("family_prefs", {})
     entry = prefs.setdefault(member_id, {"likes": [], "avoid": [], "allergies": []})
-    for field, value in (("likes", likes), ("avoid", avoid), ("allergies", allergies)):
+    for field, value in (("likes", likes), ("avoid", avoid),
+                         ("allergies", allergies), ("name", name)):
         if value is not None:
             entry[field] = value
     _save(data)
-    done()
-    return {"member_id": member_id, "preferences": entry, "proposed": True}
+    _FAMILY_CACHE["value"] = None    # наступне читання піде в API
+    return done("записано", {"member_id": member_id, "preferences": entry, "proposed": True})
 
 
 # ---------------------------------------------------------------------------
@@ -652,16 +731,20 @@ def get_swipes(liked: bool | None = None) -> dict:
 # ---------------------------------------------------------------------------
 # 7. Активація персональних промо
 # ---------------------------------------------------------------------------
-async def select_promos(promo_ids: list[int]) -> dict:
+async def select_promos(promo_ids: list[int], limit: dict | None = None) -> dict:
     """ЗАПРОПОНОВАНИЙ tool. Активувати обрані 1–5 персональних промо.
 
     `silpo_get_my_promos` віддає десять пропозицій і каже, що активувати можна
     пʼять — але tool на запис немає. Агент рахує найкращу пʼятірку під кошик,
     а натиснути «+» гість мусить руками в застосунку.
+
+    Args:
+        promo_ids: які промо активувати.
+        limit: `meta` з уже прочитаних промо (minSelect/maxSelect/total) —
+            щоб не читати список удруге в тому самому сценарії.
     """
     done = _traced("silpo_select_promos", {"promo_ids": promo_ids})
-    promos = await silpo.call("silpo_get_my_promos", {})
-    meta = promos.get("meta", {})
+    meta = dict(limit) if limit else (await silpo.call("silpo_get_my_promos", {})).get("meta", {})
     limit = int(meta.get("maxSelect") or 5)
     chosen = list(promo_ids)[:limit]
     data = _load()
@@ -697,6 +780,28 @@ def pantry_sync(items: list[dict] | None = None, source: str = "manual") -> dict
             "spec": ("Приймає інвентар кухні (назва, кількість, термін придатності) "
                      "з зовнішнього джерела — холодильника, сканера чеків, ручного "
                      "списку. " + SPEC_URL)}
+
+
+def pantry_state() -> dict:
+    """ЗАПРОПОНОВАНИЙ tool. Що ЗАРАЗ лежить на полиці.
+
+    `pantry_missing` каже, чого бракує, — а побачити сам інвентар не було де.
+    Виходило дивно: трекер звітує «5 позицій», а які саме, гість не знає.
+    Тут повний список із термінами й позначкою, що вже прострочене.
+    """
+    done = _traced("silpo_pantry_state", {})
+    pantry = _load().get("pantry") or {}
+    items = pantry.get("items") or []
+    today = time.strftime("%Y-%m-%d")
+    rows = sorted(
+        ({**i, "expired": bool(i.get("expires") and i["expires"] < today)}
+         for i in items),
+        key=lambda i: i.get("expires") or "9999")
+    done(f"{len(rows)} позицій")
+    return {"items": rows, "count": len(rows), "expired": sum(1 for i in rows if i["expired"]),
+            "source": pantry.get("source"), "at": pantry.get("at"), "proposed": True,
+            "spec": ("Інвентар кухні: що лежить і до якої дати. Джерела такого в "
+                     "«Сільпо» немає взагалі — магазин не знає, що вже вдома. " + SPEC_URL)}
 
 
 async def pantry_missing() -> dict:
@@ -736,30 +841,71 @@ def wellbeing_sync(source: str, mood: str | None = None, sleep_hours: float | No
                          "workout": workout, "cycle_phase": cycle_phase,
                          "at": time.strftime("%Y-%m-%d %H:%M:%S")}
     _save(data)
-    hints = []
-    if workout:
-        hints += ["куряче філе", "йогурт грецький", "банан"]
-    if sleep_hours is not None and sleep_hours < 6:
-        hints += ["кава мелена", "вода"]
-    if cycle_phase in ("лютеїнова", "менструація"):
-        hints += ["шоколад чорний", "чай трав'яний", "горіхи"]
-    if mood in ("сумно", "тривожно"):
-        hints += ["чай", "печиво"]
-    done()
-    return {"stored": data["wellbeing"], "suggested_queries": hints, "proposed": True,
-            "spec": ("Приймає сигнали самопочуття із зовнішнього MCP (фітнес-трекер, "
-                     "Flo, трекер настрою) і дозволяє агенту врахувати їх у підборі. "
-                     "Дані чутливі: потрібна окрема згода й зберігання на боці гостя. "
-                     + SPEC_URL)}
+    hints = [h["query"] for h in wellbeing_hints(data["wellbeing"])]
+    return done(f"{len(hints)} підказок", {
+        "stored": data["wellbeing"], "suggested_queries": hints,
+        "hints": wellbeing_hints(data["wellbeing"]), "proposed": True,
+        "spec": ("Приймає сигнали самопочуття із зовнішнього MCP (фітнес-трекер, "
+                 "Flo, трекер настрою) і дозволяє агенту врахувати їх у підборі. "
+                 "Дані чутливі: потрібна окрема згода й зберігання на боці гостя. "
+                 + SPEC_URL)})
+
+
+# Що саме трекер додає в кошик. Розрахунок живе ОКРЕМО від `wellbeing_sync`,
+# бо той самий висновок потрібен сценаріям, які читають уже накопичений стан:
+# доки він сидів усередині синхронізації, дані трекера впливали на підбір лише
+# в ту мить, коли їх щойно прислали, — а через годину ніби й не існували.
+#
+# Кожна підказка несе сигнал, який її спричинив. «Куряче філе» без підпису —
+# це просто курка в кошику; «куряче філе, бо силове тренування» — причина,
+# яку гість може перевірити у власному трекері й скасувати, якщо не згоден.
+def wellbeing_hints(state: dict | None) -> list[dict]:
+    """Позиції, які додає самопочуття, разом із сигналом-причиною."""
+    state = state or {}
+    out: list[dict] = []
+
+    def add(queries: list[str], why: str) -> None:
+        out.extend({"query": q, "why": why} for q in queries)
+
+    if state.get("workout"):
+        # Горіхи тут не випадкові: це стандартна порада після силового — і
+        # рівно те, що знімає алергія. Трекер про неї не знає, тож саме на
+        # цьому місці видно, хто кому підпорядкований.
+        add(["куряче філе", "йогурт грецький", "банан", "горіхи волоські"],
+            f"тренування: {state['workout']}")
+    if state.get("sleep_hours") is not None and state["sleep_hours"] < 6:
+        add(["кава мелена", "вода"], f"сон {state['sleep_hours']} год")
+    if state.get("cycle_phase") in ("лютеїнова", "менструація"):
+        add(["шоколад чорний", "чай трав'яний"], f"фаза циклу: {state['cycle_phase']}")
+    if state.get("mood") in ("сумно", "тривожно", "втомлено"):
+        add(["чай"], f"настрій: {state['mood']}")
+    return out
 
 
 def wellbeing_state() -> dict:
-    """Останній стан самопочуття, який синхронізували (або демо-дані)."""
+    """Останній стан самопочуття, який синхронізували (або демо-дані).
+
+    Трасується як окремий виклик: сценарій «Вечеря на всю сімʼю» читає
+    трекери саме звідси, і без сліду в панелі «Що відбувається» їх ніби
+    не було — хоча пак на них спирається.
+    """
+    done = _traced("silpo_wellbeing_state", {})
     data = _load()
-    return {"wellbeing": data.get("wellbeing") or {**_DEMO_WELLBEING, "demo": True},
-            "pantry": data.get("pantry") or {"source": "демо-холодильник", "demo": True,
-                                             "items": _DEMO_PANTRY},
-            "proposed": True}
+    wellbeing = data.get("wellbeing") or {**_DEMO_WELLBEING, "demo": True}
+    hints = wellbeing_hints(wellbeing)
+    summary = ", ".join(part for part in (
+        wellbeing.get("source"),
+        f'тренування: {wellbeing["workout"]}' if wellbeing.get("workout") else None,
+        f'сон {wellbeing["sleep_hours"]} год' if wellbeing.get("sleep_hours") else None,
+    ) if part)
+    return done(summary or "трекери не підключені", {
+        "wellbeing": wellbeing,
+        "hints": hints,
+        "suggested_queries": [h["query"] for h in hints],
+        "pantry": data.get("pantry") or {"source": "демо-холодильник", "demo": True,
+                                         "items": _DEMO_PANTRY},
+        "source": "наш шар: .mcp/proposed.json → wellbeing; у живому продукті — MCP трекера",
+        "proposed": True})
 
 
 # ---------------------------------------------------------------------------
@@ -768,18 +914,59 @@ def wellbeing_state() -> dict:
 # Поки немає справжніх інтеграцій, тримаємо правдоподібні дані з позначкою
 # demo=true. Без них сценарії «сімʼя», «холодильник» і «самопочуття» показувати
 # нема на чому — а саме вони найкраще пояснюють, навіщо MCP потрібні сусіди.
+# `fields` — це і є відповідь на «які саме дані називаються трекерами».
+# Кожне поле названо, показано, звідки воно й у якому сценарії застосовується.
+# Ховати це в одному рядку «тренування, кроки, сон» нечесно: людина віддає
+# доступ до сну й циклу, тож має бачити рівно те, що ми з цього читаємо.
 CONNECTORS = [
     {"id": "samsung_fridge", "name": "Samsung Family Hub", "kind": "холодильник",
-     "gives": "інвентар полиць і терміни придатності", "icon": "fridge"},
+     "gives": "інвентар полиць і терміни придатності", "icon": "fridge",
+     "fields": [
+         {"key": "pantry.count", "title": "позицій на полиці", "used": True,
+          "used_by": "Що зникло з холодильника · Тижневий закуп сам"},
+         # Термін придатності холодильник віддає, але жоден наш сценарій його
+         # ще не читає: `pantry_missing` дивиться лише на перелік позицій.
+         # Написати сюди «Не забудь» було б обіцянкою, якої код не виконує.
+         {"key": "pantry.soonest", "title": "найближчий термін придатності", "used": False,
+          "used_by": None},
+     ]},
     {"id": "flo", "name": "Flo", "kind": "жіноче здоровʼя",
-     "gives": "фаза циклу, самопочуття", "icon": "flower"},
+     "gives": "фаза циклу", "icon": "flower",
+     "fields": [
+         {"key": "wellbeing.cycle_phase", "title": "фаза циклу", "used": True,
+          "used_by": "Після тренування"},
+     ]},
     {"id": "google_fit", "name": "Google Fit", "kind": "активність",
-     "gives": "тренування, кроки, сон", "icon": "heartbeat"},
+     "gives": "тренування, кроки, сон", "icon": "heartbeat",
+     "fields": [
+         {"key": "wellbeing.sleep_hours", "title": "годин сну", "used": True,
+          "used_by": "Після тренування"},
+         {"key": "wellbeing.workout", "title": "останнє тренування", "used": True,
+          "used_by": "Після тренування"},
+         {"key": "wellbeing.steps", "title": "кроків за день", "used": True,
+          "used_by": "Після тренування"},
+     ]},
     {"id": "daylio", "name": "Daylio", "kind": "настрій",
-     "gives": "щоденні позначки настрою", "icon": "spark"},
+     "gives": "щоденні позначки настрою", "icon": "spark",
+     "fields": [
+         {"key": "wellbeing.mood", "title": "настрій", "used": True,
+          "used_by": "Настрій із твоїх даних"},
+     ]},
     {"id": "google_calendar", "name": "Google Календар", "kind": "плани",
-     "gives": "події, гості, дні народження", "icon": "calendar"},
+     "gives": "події, гості, дні народження", "icon": "calendar",
+     "fields": [
+         # Календар підключається, але жоден сценарій його ще не читає — і
+         # перемикач для нього нічого не засіває. Лишаємо видимим саме тому:
+         # список полів має показувати й те, що ЩЕ не працює.
+         {"key": "calendar.events", "title": "найближчі події", "used": False,
+          "used_by": None},
+     ]},
 ]
+
+# Підпис джерела вподобань у відповіді get_family_preferences. Гість має
+# бачити різницю між «я це заповнив» і «агент підставив за роллю».
+PREFS_SOURCE_GUEST = "профіль гостя (Профіль → Моя сімʼя)"
+PREFS_SOURCE_DEMO = "демо за роллю — гість ще не заповнив"
 
 _DEMO_FAMILY = {
     "дитина": {"likes": ["піца", "кола", "морозиво", "чипси"],
@@ -802,21 +989,70 @@ _DEMO_WELLBEING = {"source": "Google Fit + Daylio", "mood": "втомлено",
                    "steps": 11420}
 
 
+def _tracker_value(key: str, data: dict):
+    """Поточне значення поля трекера — рівно те, що агент справді прочитає."""
+    pantry = data.get("pantry") or {}
+    items = pantry.get("items") or []
+    wb = data.get("wellbeing") or {}
+    if key == "pantry.count":
+        return f"{len(items)} позицій" if items else None
+    if key == "pantry.soonest":
+        dates = sorted(i.get("expires") for i in items if i.get("expires"))
+        if not dates:
+            return None
+        soonest = next((i for i in items if i.get("expires") == dates[0]), {})
+        return f'{soonest.get("name", "?")} до {dates[0]}'
+    if key.startswith("wellbeing."):
+        value = wb.get(key.split(".", 1)[1])
+        if value in (None, ""):
+            return None
+        return {"sleep_hours": f"{value} год", "steps": f"{value} кроків"}.get(
+            key.split(".", 1)[1], str(value))
+    return None
+
+
 def connectors() -> dict:
     """Зовнішні застосунки, з яких агент може брати контекст.
 
     Це і є відповідь на питання «навіщо MCP, якщо є застосунок «Сільпо»»:
     магазин не знає, що ти не спав і щойно з залу, а трекер не знає, що
     в тебе алергія на горіхи. Зшиває їх агент.
+
+    Разом зі списком джерел віддаємо ПОІМЕННО кожне поле, яке агент із них
+    читає, і його поточне значення. Інакше «трекери» — це слово, під яким
+    може ховатись будь-що: людина віддає доступ до сну й циклу, тож має
+    бачити рівно те, що з цього береться.
     """
     done = _traced("silpo_list_connectors", {})
-    state = _load().get("connectors", {})
-    done()
-    return {"connectors": [{**c, "connected": bool(state.get(c["id"]))}
-                           for c in CONNECTORS], "proposed": True,
-            "spec": ("Кожен конектор — окремий MCP-сервер збоку застосунку-джерела. "
-                     "«Сільпо» не має їх реалізовувати: достатньо, щоб агент міг "
-                     "тримати кілька MCP одночасно. " + SPEC_URL)}
+    data = _load()
+    state = data.get("connectors", {})
+
+    rows, live, used = [], 0, 0
+    for c in CONNECTORS:
+        on = bool(state.get(c["id"]))
+        fields = []
+        for f in c.get("fields") or []:
+            value = _tracker_value(f["key"], data) if on else None
+            if value is not None:
+                live += 1
+            if f.get("used"):
+                used += 1
+            fields.append({**f, "value": value})
+        rows.append({**c, "connected": on, "fields": fields})
+
+    total = sum(len(c.get("fields") or []) for c in CONNECTORS)
+    return done(f"{sum(1 for r in rows if r['connected'])} підключено, "
+                f"{live}/{total} полів із даними, {used} читаються сценаріями", {
+        "connectors": rows, "proposed": True,
+        "fields_total": total, "fields_live": live, "fields_used": used,
+        "demo": True,
+        "why": ("«Трекери» — це не абстракція: нижче названо кожне поле, яке агент "
+                "читає, його поточне значення і сценарій, який його вживає. "
+                "Поля, які жоден сценарій ще не читає, підписані окремо — "
+                "показувати їх як робочі було б обіцянкою, якої код не виконує."),
+        "spec": ("Кожен конектор — окремий MCP-сервер збоку застосунку-джерела. "
+                 "«Сільпо» не має їх реалізовувати: достатньо, щоб агент міг "
+                 "тримати кілька MCP одночасно. " + SPEC_URL)})
 
 
 def connect(source: str, on: bool = True) -> dict:
@@ -1121,3 +1357,403 @@ async def find_recipe_online(query: str, limit: int = 4) -> dict:
                      "або попроси модель скласти перелік точніше."),
             "spec": ("Показує, чого бракує: якби «Сільпо» віддавало рецепти з "
                      "артикулами, цей обхідний шлях був би не потрібен. " + SPEC_URL)}
+
+
+# ---------------------------------------------------------------------------
+# 13. Компанія — спільна закупівля кількох людей
+# ---------------------------------------------------------------------------
+# НОВИЙ КОНЦЕПТ. У «Сільпо» цього немає ніде: ані в застосунку, ані в MCP.
+#
+# «Сімейна група» — це інше й воно вже існує: кілька акаунтів на різних номерах,
+# зведених у сталу сутність зі спільними бонусами. Компанія — навпаки, разова:
+# зібрались на пікнік, кожен кинув у список своє, поїхали, розрахувались,
+# розійшлись. Постійного звʼязку між акаунтами тут не потрібно й не хочеться.
+#
+# Три речі, яких без цього не буває:
+#   1. алергії ВСІХ учасників в одному місці — зараз організатор тримає їх у
+#      голові або в чаті, і саме так хтось отримує горіхи в салаті;
+#   2. пропозиції кожного — список збирається не однією людиною;
+#   3. розрахунок — хто скільки заплатив і хто кому лишився винен.
+#
+# Третє — свідома цитата з банків: «розділити чек» у Monobank люди вже вміють
+# і розуміють. Ми рахуємо суми й перекази; переказ грошей — не наша справа й
+# не справа продуктової мережі. Поле `simulated` стоїть скрізь, де це видно.
+CREW_DEMO = [
+    {"name": "Олександр", "role": "організатор", "allergies": [], "diets": [],
+     "suggests": ["ковбаски для гриля", "вугілля деревне"], "paid_uah": 0.0},
+    {"name": "Марина", "role": "гість", "allergies": ["горіхи"], "diets": [],
+     "suggests": ["овочі для гриля", "лаваш"], "paid_uah": 0.0},
+    {"name": "Тарас", "role": "гість", "allergies": [], "diets": ["без лактози"],
+     "suggests": ["пиво світле", "чипси"], "paid_uah": 0.0},
+    {"name": "Ірина", "role": "гість", "allergies": ["мед"], "diets": ["вегетаріанська"],
+     "suggests": ["печериці", "кукурудза"], "paid_uah": 0.0},
+    {"name": "Богдан", "role": "гість", "allergies": [], "diets": [],
+     "suggests": ["кавун", "вода мінеральна"], "paid_uah": 0.0},
+]
+
+
+def _crews(data: dict) -> dict:
+    return data.setdefault("crews", {})
+
+
+def _crew_or_latest(data: dict, crew_id: str | None) -> dict | None:
+    crews = _crews(data)
+    if crew_id:
+        return crews.get(crew_id)
+    return max(crews.values(), key=lambda c: c.get("created_at", ""), default=None)
+
+
+def find_crew_id(title: str | None) -> str | None:
+    """Id компанії за назвою — «Пікнік», як її називає гість у чаті.
+
+    Збіг без регістру й лапок; якщо назв кілька однакових — найсвіжіша.
+    """
+    low = (title or "").strip().strip("«»\"'").lower()
+    if not low:
+        return None
+    crews = [c for c in _crews(_load()).values()
+             if (c.get("title") or "").strip().lower() == low]
+    if not crews:
+        crews = [c for c in _crews(_load()).values()
+                 if low in (c.get("title") or "").lower()]
+    crew = max(crews, key=lambda c: c.get("created_at", ""), default=None)
+    return crew["id"] if crew else None
+
+
+def _member(crew: dict, name: str) -> dict | None:
+    low = (name or "").strip().lower()
+    return next((m for m in crew["members"] if m["name"].lower() == low), None)
+
+
+def create_crew(title: str, occasion: str = "пікнік", people: int = 0,
+                demo: bool = True) -> dict:
+    """ЗАПРОПОНОВАНИЙ tool. Створити компанію під конкретну подію.
+
+    Args:
+        title: як компанія називається — «Пікнік на Трухановому».
+        occasion: тема; від неї залежить базовий набір, якщо ніхто нічого не
+            запропонував.
+        people: скільки людей очікується; впливає лише на кількості в паку.
+        demo: засіяти демонстраційних учасників з алергіями й пропозиціями.
+            У живому продукті на це місце стає запрошення за посиланням.
+    """
+    done = _traced("silpo_create_crew", {"title": title, "occasion": occasion})
+    data = _load()
+    crews = _crews(data)
+    crew_id = f"crew-{len(crews) + 1}"
+    members = [dict(m) for m in CREW_DEMO] if demo else []
+    crew = {
+        "id": crew_id, "title": title, "occasion": occasion,
+        "people": people or (len(members) or 4),
+        "created_at": time.strftime("%Y-%m-%d %H:%M"),
+        "members": members, "demo": demo,
+    }
+    crews[crew_id] = crew
+    _save(data)
+    done(f'{title}: {len(members)} осіб')
+    # Запрошення — посилання, яке організатор кидає в чат компанії або показує
+    # QR-кодом: кожен додає себе зі свого телефона. Хост підставляє сторінка.
+    crew["join_path"] = f"/join?crew={crew_id}"
+    return {"crew": crew, "proposed": True, "simulated": demo,
+            "spec": ("Разова компанія під подію: кожен учасник додає свої обмеження "
+                     "й свої пропозиції зі свого телефона, а кошик виходить один. "
+                     "Це НЕ «сімейна група» — постійного звʼязку акаунтів тут не "
+                     "потрібно. У «Сільпо» такого немає ні в застосунку, ні в MCP. "
+                     + SPEC_URL)}
+
+
+def get_crew(crew_id: str | None = None) -> dict:
+    """ЗАПРОПОНОВАНИЙ tool. Компанія цілком: учасники, обмеження, пропозиції."""
+    done = _traced("silpo_get_crew", {"crew_id": crew_id})
+    crew = _crew_or_latest(_load(), crew_id)
+    if not crew:
+        done("немає жодної")
+        return {"crew": None, "proposed": True,
+                "hint": "Компанії ще немає — створи через silpo_create_crew."}
+
+    allergies, diets, wishes = [], [], []
+    for m in crew["members"]:
+        for a in m.get("allergies") or []:
+            allergies.append({"term": a, "who": m["name"]})
+        for d in m.get("diets") or []:
+            diets.append({"term": d, "who": m["name"]})
+        for s in m.get("suggests") or []:
+            wishes.append({"item": s, "who": m["name"]})
+
+    done(f'{crew["title"]}: {len(crew["members"])} осіб, {len(allergies)} алергій')
+    return {
+        "crew": crew, "members": crew["members"],
+        "allergies": allergies, "diets": diets, "wishes": wishes,
+        "blocked_for_everyone": sorted({a["term"] for a in allergies}),
+        "proposed": True, "simulated": bool(crew.get("demo")),
+        "why": ("Алергія будь-кого блокує товар для ВСЬОГО кошика — на пікніку "
+                "немає окремої тарілки. Зараз ці дані живуть у голові організатора."),
+    }
+
+
+def list_crews() -> dict:
+    """ЗАПРОПОНОВАНИЙ tool. Усі компанії гостя."""
+    done = _traced("silpo_list_crews", {})
+    crews = list(_crews(_load()).values())
+    done(f"{len(crews)}")
+    return {"count": len(crews), "crews": crews, "proposed": True}
+
+
+def crew_join(name: str, crew_id: str | None = None,
+              allergies: list[str] | None = None, diets: list[str] | None = None,
+              suggests: list[str] | None = None, role: str = "гість") -> dict:
+    """ЗАПРОПОНОВАНИЙ tool. Учасник приєднується і одразу каже про себе головне.
+
+    Той самий виклик і додає людину, і оновлює вже додану — щоб «змінив думку»
+    не вимагало окремого tool.
+    """
+    done = _traced("silpo_crew_join", {"crew_id": crew_id, "name": name})
+    data = _load()
+    crew = _crew_or_latest(data, crew_id)
+    if not crew:
+        done("немає компанії")
+        return {"error": "Компанії ще немає — спершу створи її.", "proposed": True}
+
+    member = _member(crew, name)
+    if not member:
+        member = {"name": name.strip(), "role": role, "allergies": [], "diets": [],
+                  "suggests": [], "paid_uah": 0.0}
+        crew["members"].append(member)
+    for field, value in (("allergies", allergies), ("diets", diets),
+                         ("suggests", suggests)):
+        if value is not None:
+            member[field] = [v.strip() for v in value if str(v).strip()]
+    _save(data)
+    done(f'{name} → {crew["title"]}')
+    return {"crew_id": crew["id"], "member": member,
+            "members": len(crew["members"]), "proposed": True}
+
+
+def crew_suggest(name: str, items: list[str], crew_id: str | None = None) -> dict:
+    """ЗАПРОПОНОВАНИЙ tool. Учасник докидає своє в спільний список.
+
+    Не замінює попереднє, а додає — список компанії росте, поки збираються.
+    """
+    done = _traced("silpo_crew_suggest", {"crew_id": crew_id, "name": name})
+    data = _load()
+    crew = _crew_or_latest(data, crew_id)
+    if not crew:
+        done("немає компанії")
+        return {"error": "Компанії ще немає.", "proposed": True}
+    member = _member(crew, name)
+    if not member:
+        done("немає такого учасника")
+        return {"error": f"У компанії немає «{name}». Спершу silpo_crew_join.",
+                "proposed": True}
+    have = {s.lower() for s in member["suggests"]}
+    added = [i.strip() for i in items if i.strip() and i.strip().lower() not in have]
+    member["suggests"] += added
+    _save(data)
+    done(f'{name}: +{len(added)}')
+    return {"crew_id": crew["id"], "member": member["name"],
+            "added": added, "suggests": member["suggests"], "proposed": True}
+
+
+def crew_leave(name: str, crew_id: str | None = None) -> dict:
+    """ЗАПРОПОНОВАНИЙ tool. Прибрати учасника — разом із його обмеженнями."""
+    done = _traced("silpo_crew_leave", {"crew_id": crew_id, "name": name})
+    data = _load()
+    crew = _crew_or_latest(data, crew_id)
+    if not crew:
+        return {"error": "Компанії ще немає.", "proposed": True}
+    before = len(crew["members"])
+    crew["members"] = [m for m in crew["members"] if m["name"].lower() != name.lower()]
+    _save(data)
+    done(f"{before} → {len(crew['members'])}")
+    return {"crew_id": crew["id"], "removed": before != len(crew["members"]),
+            "members": len(crew["members"]), "proposed": True}
+
+
+def crew_paid(name: str, amount_uah: float, crew_id: str | None = None) -> dict:
+    """ЗАПРОПОНОВАНИЙ tool. Хто скільки вже заплатив — вхід для розрахунку."""
+    done = _traced("silpo_crew_paid", {"crew_id": crew_id, "name": name,
+                                       "amount_uah": amount_uah})
+    data = _load()
+    crew = _crew_or_latest(data, crew_id)
+    if not crew:
+        return {"error": "Компанії ще немає.", "proposed": True}
+    member = _member(crew, name)
+    if not member:
+        return {"error": f"У компанії немає «{name}».", "proposed": True}
+    member["paid_uah"] = round(float(amount_uah or 0), 2)
+    _save(data)
+    done(f'{name}: {member["paid_uah"]} ₴')
+    return {"crew_id": crew["id"], "member": member["name"],
+            "paid_uah": member["paid_uah"], "proposed": True}
+
+
+def crew_share(name: str, amount_uah: float | None = None, crew_id: str | None = None,
+               propose: bool = False, note: str = "") -> dict:
+    """ЗАПРОПОНОВАНИЙ tool. Інша частка для учасника — закріпити або запропонувати.
+
+    Організатор закріплює суму («Тарас — 120, він бере лише пиво»); гість зі
+    свого телефона лише ПРОПОНУЄ («мені 100, я на годину») — і організатор
+    приймає або ні. Рівна частка — типова, але рівна не завжди справедлива.
+
+    Args:
+        name: чия частка.
+        amount_uah: сума; None — прибрати закріплення (знову порівну).
+        propose: True — це пропозиція гостя, не рішення організатора.
+        note: чому («беру лише пиво»).
+    """
+    done = _traced("silpo_crew_share", {"crew_id": crew_id, "name": name,
+                                        "amount_uah": amount_uah, "propose": propose})
+    data = _load()
+    crew = _crew_or_latest(data, crew_id)
+    if not crew:
+        done("немає компанії")
+        return {"error": "Компанії ще немає.", "proposed": True}
+    member = _member(crew, name)
+    if not member:
+        done("немає такого учасника")
+        return {"error": f"У компанії немає «{name}».", "proposed": True}
+    if propose:
+        member["share_proposed_uah"] = amount_uah
+        member["share_proposal_note"] = (note or "").strip()
+    else:
+        member["share_fixed_uah"] = amount_uah
+        member.pop("share_proposed_uah", None)
+        member.pop("share_proposal_note", None)
+    _save(data)
+    done(f'{name}: {"пропонує" if propose else "закріплено"} {amount_uah}')
+    return {"crew_id": crew["id"], "member": member, "proposed": True}
+
+
+def crew_share_answer(name: str, accept: bool = True, crew_id: str | None = None) -> dict:
+    """ЗАПРОПОНОВАНИЙ tool. Прийняти або відхилити пропозицію гостя щодо частки."""
+    done = _traced("silpo_crew_share_answer", {"crew_id": crew_id, "name": name, "accept": accept})
+    data = _load()
+    crew = _crew_or_latest(data, crew_id)
+    member = _member(crew, name) if crew else None
+    if not member:
+        done("немає такого учасника")
+        return {"error": f"У компанії немає «{name}».", "proposed": True}
+    amount = member.pop("share_proposed_uah", None)
+    member.pop("share_proposal_note", None)
+    if accept and amount is not None:
+        member["share_fixed_uah"] = amount
+    _save(data)
+    done(f'{name}: {"прийнято" if accept else "відхилено"} {amount}')
+    return {"crew_id": crew["id"], "member": member, "accepted": bool(accept and amount is not None),
+            "proposed": True}
+
+
+def clear_crews() -> dict:
+    """Прибрати всі компанії. Компанія — разова: з кожним запуском сервера
+    й з кожним «чистим дублем» починаємо з порожнього списку, і асистент
+    знову ПРОПОНУЄ її створити, а не каже «у тебе вже є»."""
+    data = _load()
+    n = len(_crews(data))
+    data["crews"] = {}
+    _save(data)
+    return {"removed": n}
+
+
+def delete_crew(crew_id: str) -> dict:
+    """ЗАПРОПОНОВАНИЙ tool. Прибрати компанію разом з учасниками й пропозиціями.
+
+    Компанія разова за задумом: після події вона має зникати, а не осідати
+    списком у профілі назавжди.
+    """
+    done = _traced("silpo_delete_crew", {"crew_id": crew_id})
+    data = _load()
+    crews = _crews(data)
+    gone = crews.pop(crew_id, None)
+    _save(data)
+    done(gone["title"] if gone else "не знайдено")
+    return {"deleted": bool(gone), "crew_id": crew_id,
+            "title": (gone or {}).get("title"), "left": len(crews),
+            "proposed": True}
+
+
+def crew_split(total_uah: float, crew_id: str | None = None) -> dict:
+    """ЗАПРОПОНОВАНИЙ tool. Розділити суму на компанію і звести перекази.
+
+    Рахує рівну частку, віднімає вже сплачене й зводить борги до МІНІМАЛЬНОЇ
+    кількості переказів: найбільший боржник платить найбільшому кредитору,
+    поки нуль не зійдеться.
+
+    Грошей ми не рухаємо і рухати не будемо: «розділити чек» уміють банки —
+    у Monobank ця механіка є, і люди нею вже користуються. Наша частина —
+    назвати суми, бо тільки ми знаємо, що саме в кошику й чий це був вибір.
+    """
+    done = _traced("silpo_crew_split", {"crew_id": crew_id, "total_uah": total_uah})
+    data = _load()
+    crew = _crew_or_latest(data, crew_id)
+    if not crew or not crew["members"]:
+        done("немає компанії")
+        return {"error": "Компанії ще немає або в ній нікого.", "proposed": True}
+
+    members = crew["members"]
+    total = round(float(total_uah or 0), 2)
+    # Частка не завжди рівна: організатор може закріпити комусь свою суму
+    # («Тарас бере лише пиво — 120»), а гість — запропонувати її сам зі свого
+    # телефона. Закріплені суми віднімаємо від чека, решту ділимо порівну
+    # між іншими.
+    fixed = {m["name"]: round(float(m["share_fixed_uah"]), 2)
+             for m in members if m.get("share_fixed_uah") is not None}
+    rest_people = [m for m in members if m["name"] not in fixed]
+    rest_total = max(0.0, round(total - sum(fixed.values()), 2))
+    share = round(rest_total / len(rest_people), 2) if rest_people else 0.0
+
+    rows, balances = [], []
+    for m in members:
+        paid = round(float(m.get("paid_uah") or 0), 2)
+        own = fixed.get(m["name"], share)
+        balance = round(paid - own, 2)
+        rows.append({"name": m["name"], "share_uah": own, "paid_uah": paid,
+                     "balance_uah": balance, "fixed": m["name"] in fixed,
+                     "proposed_uah": (round(float(m["share_proposed_uah"]), 2)
+                                      if m.get("share_proposed_uah") is not None else None),
+                     "proposal_note": m.get("share_proposal_note") or ""})
+        balances.append([m["name"], balance])
+
+    # Скільки компанія вже виклала. Якщо це менше за суму кошика — борги в нуль
+    # НЕ зійдуться, і це не помилка розрахунку, а факт: решта ще не сплачена.
+    # Показати «всі розрахувались», поки в касу не внесено 300 ₴, було б рівно
+    # тим вигаданим числом, проти якого побудований весь проєкт.
+    paid_total = round(sum(r["paid_uah"] for r in rows), 2)
+    unpaid = round(total - paid_total, 2)
+
+    # Зведення: найбільший боржник → найбільшому кредитору. Копійчані залишки
+    # (< 1 ₴) не ганяємо — у житті їх ніхто не переказує.
+    debtors = sorted([b for b in balances if b[1] < -0.5], key=lambda b: b[1])
+    creditors = sorted([b for b in balances if b[1] > 0.5], key=lambda b: -b[1])
+    transfers = []
+    i = j = 0
+    while i < len(debtors) and j < len(creditors):
+        amount = round(min(-debtors[i][1], creditors[j][1]), 2)
+        if amount >= 1:
+            transfers.append({"from": debtors[i][0], "to": creditors[j][0],
+                              "amount_uah": amount})
+        debtors[i][1] += amount
+        creditors[j][1] -= amount
+        if -debtors[i][1] < 0.5:
+            i += 1
+        if creditors[j][1] < 0.5:
+            j += 1
+
+    done(f"{total} ₴ / {len(members)} = {share} ₴, {len(transfers)} переказів"
+         + (f", ще не сплачено {unpaid} ₴" if unpaid > 0.5 else ""))
+    return {
+        "crew_id": crew["id"], "title": crew["title"],
+        "total_uah": total, "people": len(members), "share_uah": share,
+        "paid_total_uah": paid_total, "unpaid_uah": max(unpaid, 0.0),
+        "rows": rows, "transfers": transfers,
+        "settled": not transfers and unpaid <= 0.5,
+        "note": (f"Компанія виклала {paid_total} ₴ із {total} ₴ — "
+                 f"решта {unpaid} ₴ ще не сплачена, тож частина боргів "
+                 "закриється лише на касі." if unpaid > 0.5 else
+                 "Сплачено всю суму — лишилось лише зрівняти між своїми."),
+        "proposed": True, "simulated": True,
+        "handoff": ("Переказ грошей — не наша справа. Суми готові до передачі в "
+                    "банківський «розділити чек» (у Monobank така механіка вже є); "
+                    "ми жодної платіжної інтеграції не робимо й не імітуємо."),
+        "spec": ("Мережа знає склад кошика й чий це був вибір — тільки вона може "
+                 "порахувати частки чесно. Сьогодні цього немає ніде. " + SPEC_URL),
+    }

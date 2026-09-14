@@ -39,7 +39,14 @@ def _content_text(result) -> str:
     )
 
 
-PREVIEW_CHARS = 1800
+# Відповідь у трейсі зберігаємо ЦІЛКОМ: обрізана на 1800 символах вона
+# показувала форму даних, але не самі дані — а сенс трейсу саме в тому, щоб
+# людина могла прочитати, що прийшло. Ціна — памʼять: один пошук повертає
+# сотні кілобайт, а записів у трейсі двісті. Тому стеля не на запис, а на
+# ВЕСЬ трейс: коли сумарний обсяг переростає бюджет, у найстаріших записів
+# відповідь скидається (сам виклик лишається видимим, з поміткою).
+ONE_CHARS = 400_000        # стеля на одну відповідь — захист від аномалії
+TRACE_BUDGET = 12_000_000  # скільки символів відповідей тримаємо всього
 
 
 def _preview(value: Any) -> str | None:
@@ -50,7 +57,7 @@ def _preview(value: Any) -> str | None:
         text = json.dumps(value, ensure_ascii=False, indent=1)
     except (TypeError, ValueError):
         text = str(value)
-    return text if len(text) <= PREVIEW_CHARS else text[:PREVIEW_CHARS] + "\n… (обрізано)"
+    return text if len(text) <= ONE_CHARS else text[:ONE_CHARS] + "\n… (обрізано)"
 
 
 def _parse(text: str) -> Any:
@@ -177,18 +184,34 @@ class SilpoMCP:
     # -- трейс -------------------------------------------------------------
     def _log(self, tool: str, args: dict, started: float, *, ok: bool, note: str = "",
              kind: str = "real", result: Any = None) -> None:
+        from .naming import tool_title
         self.trace.append({
-            "tool": tool, "kind": kind,
+            "tool": tool, "kind": kind, "title": tool_title(tool),
             "args": {k: v for k, v in args.items()
                      if k not in ("timeslotStart", "timeslotEnd", "shoppingCartId")},
-            # Відповідь тримаємо обрізаною: у трейсі 200 записів, а один пошук
-            # повертає сотні кілобайт. Для «під капотом» вистачає початку —
-            # видно форму даних і те, що вони справжні.
+            # Відповідь — цілком: у картці виклику її читають, а не оглядають.
             "out": _preview(result),
             "ms": round((time.perf_counter() - started) * 1000),
             "ok": ok, "note": note, "at": time.strftime("%H:%M:%S"),
         })
         del self.trace[:-MAX_TRACE]
+        self._fit_budget()
+
+    def _fit_budget(self) -> None:
+        """Тримає сумарний обсяг відповідей у межах бюджету.
+
+        Скидаємо найстаріші: свіжі виклики — ті, які щойно клацнули, і саме їх
+        треба показати повністю. У старих лишається сам факт виклику з поміткою,
+        а не тиша: зникла відповідь має бути видно, інакше це вигляд помилки.
+        """
+        total = sum(len(c["out"]) for c in self.trace if c.get("out"))
+        for call in self.trace:
+            if total <= TRACE_BUDGET:
+                return
+            if call.get("out"):
+                total -= len(call["out"])
+                call["out"] = "… відповідь звільнено, щоб не тримати пів гігабайта в памʼяті"
+                call["shed"] = True
 
     def log_proposed(self, tool: str, args: dict, started: float, *, ok: bool = True,
                      note: str = "", result: Any = None) -> None:

@@ -25,7 +25,9 @@ ITEM_FIELDS = ("product_id", "external_id", "company_id", "branch_id", "slug", "
                "weighted", "multibuy",
                # пояснення, чому позиція тут: без них автоматичний кошик
                # неможливо довірити, а після перезбереження вони губились
-               "because", "scaled", "novelty_relaxed")
+               "because", "scaled", "novelty_relaxed",
+               # хто з компанії запропонував цю позицію
+               "from_member")
 
 
 def _now() -> str:

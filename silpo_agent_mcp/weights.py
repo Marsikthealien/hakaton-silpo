@@ -127,6 +127,16 @@ def weight_of(name: str) -> float:
     return round(own + CATEGORY_SHARE * category, 2)
 
 
+def own_weight_of(name: str) -> float:
+    """Вага САМОГО товару, без частки полиці.
+
+    Для підбору важить сума, а для підпису «береш регулярно» — ні: частка
+    полиці «Напої +40» робила «регулярним» будь-який напій, який гість бачив
+    уперше. Підписуємо лише те, що він справді брав чи свайпав.
+    """
+    return float((_load()["products"].get(_key(name)) or {}).get("weight", 0.0))
+
+
 def known(name: str) -> bool:
     """Чи стикався гість із цим товаром узагалі — купував, свайпав, міняв.
 
@@ -157,7 +167,14 @@ def novelty_note(novelty: str) -> str:
 
 
 def snapshot(limit: int = 12) -> dict:
-    """Що агент знає про смаки — у вигляді, зрозумілому людині."""
+    """Що агент знає про смаки — у вигляді, зрозумілому людині.
+
+    Трасується як `silpo_get_taste_weights`: сценарії спираються на ваги, і
+    в панелі «Що відбувається» це має бути таким самим викликом, як решта,
+    з відповіддю, яку можна прочитати. Інакше «ваги смаку» — слово без сліду.
+    """
+    from .silpo import silpo
+    started = time.perf_counter()
     data = _load()
     from .proposed import SILPO_CATEGORIES
     titles = {c[0]: c[1] for c in SILPO_CATEGORIES}
@@ -168,7 +185,7 @@ def snapshot(limit: int = 12) -> dict:
         ({"slug": k, "title": titles.get(k, k), "weight": v["weight"]}
          for k, v in data["categories"].items()),
         key=lambda c: -c["weight"])
-    return {
+    result = {
         "loved": [{"name": p["name"], "weight": p["weight"]}
                   for p in products[:limit] if p["weight"] > 0],
         "disliked": [{"name": p["name"], "weight": p["weight"]}
@@ -176,10 +193,16 @@ def snapshot(limit: int = 12) -> dict:
         "categories": categories,
         "tracked_products": len(products),
         "recent": data["log"][-10:][::-1],
+        "source": "наш шар: .mcp/weights.json — покупки з чеків, свайпи, заміни в паках",
         "note": ("Вага росте від покупок і свайпів вправо, падає від замін і свайпів "
                  "уліво. Відʼємна вага — мʼяка нелюбов, не алергія: якщо кращого немає, "
                  "товар усе одно запропонується, але останнім."),
     }
+    silpo.log_proposed("silpo_get_taste_weights", {"limit": limit}, started,
+                       note=f'{len(products)} товарів, топ: '
+                            + ", ".join(r["name"].split()[0] for r in result["loved"][:3]),
+                       result=result)
+    return result
 
 
 def reset() -> dict:

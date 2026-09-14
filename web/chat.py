@@ -29,7 +29,9 @@ MODEL = os.environ.get("OLLAMA_MODEL", "")  # порожньо = авто-виб
 CHAT_TIMEOUT = float(os.environ.get("CHAT_TIMEOUT", "120"))
 # Скільки чекати на озвучення вже готового результату. Довше — частіше доходить
 # до тексту моделі; коротше — швидше кидає помилку.
-NARRATE_TIMEOUT = float(os.environ.get("NARRATE_TIMEOUT", "60"))
+# 60 с вистачало, поки модель була на відеокарті. На процесорі 7B видає ~2.6
+# токена за секунду, і два речення разом із чергою за CPU в це не влазять.
+NARRATE_TIMEOUT = float(os.environ.get("NARRATE_TIMEOUT", "120"))
 
 _PREFERRED = ["qwen2.5:7b", "qwen2.5:3b", "qwen2.5:3b-instruct",
               "llama3.2:3b", "qwen2.5", "qwen3:4b", "qwen3:1.7b", "qwen3"]
@@ -38,7 +40,7 @@ ALLOWED = {
     "who_am_i", "build_pack", "pack_from_receipt", "reorder_pack",
     "mood_pack", "evening_pack", "breakfast_pack",
     "weekly_pack", "budget_pack", "party_pack",
-    "optimize_pack", "swap_item", "pack_to_cart", "save_pack",
+    "optimize_pack", "swap_item", "pack_to_cart", "save_pack", "precheck_pack",
     # правка поточного пака словами
     "pack_add", "pack_remove", "pack_set_qty", "pack_swap_named", "get_pack",
     "my_packs", "my_perks",
@@ -114,7 +116,7 @@ SYSTEM = (
     + VOICE_STYLE
 )
 
-async def _fallback(messages: list[dict], host) -> dict:
+async def _fallback(messages: list[dict], host, pack_id: str | None = None) -> dict:
     """Без моделі: розбираємо намір правилами й виконуємо сценарій самі."""
     text = next((m.get("content", "") for m in reversed(messages)
                  if m.get("role") == "user"), "")
@@ -124,26 +126,54 @@ async def _fallback(messages: list[dict], host) -> dict:
                 "tools_used": [], "routed": True}
     profile = (await host.call("get_profile", {})).get("profile", {})
     args = dict(intent["args"])
+    # «Прибери каву» або «перевір перед оформленням» — про ТОЙ пак, що на
+    # екрані, а не про останній створений: телефон надсилає його id.
+    if pack_id and intent["tool"] in ("pack_add", "pack_remove", "pack_set_qty",
+                                      "pack_swap_named", "precheck_pack"):
+        args.setdefault("pack_id", pack_id)
+    # «Топати чи замовити» — пороги доставки рахуємо під суму пака на екрані.
+    if pack_id and intent["tool"] == "silpo_estimate_delivery":
+        pack = (await host.call("get_pack", {"pack_id": pack_id})) or {}
+        if pack.get("total_uah"):
+            args["cart_total_uah"] = float(pack["total_uah"])
     if intent["tool"] in ("build_pack", "meal_pack", "mood_pack", "evening_pack",
                           "pack_from_receipt", "reorder_pack", "weekly_pack",
-                          "budget_pack", "party_pack"):
+                          "budget_pack", "party_pack", "family_pack"):
         avoid = (profile.get("allergies") or []) + (profile.get("dislikes") or [])
         if avoid:
             args.setdefault("avoid", avoid)
-        if profile.get("bonus_first"):
+        if profile.get("bonus_first", True):     # акційне спершу — типово
             args.setdefault("prefer_promo", True)
     log.info("fallback: %r → правило %s %s", text[:60], intent["tool"], args)
+    if intent["tool"] == "crew_propose":
+        # Нічого не створюємо без згоди — лише пропонуємо. Компанія разова,
+        # тож завжди нова: «у тебе вже є» тут не буває.
+        title = args["title"]
+        proposal = {"title": title, "occasion": args["occasion"]}
+        reply = (f"Зберемо компанію «{title}»? Кожен додасть свої алергії й побажання "
+                 "зі свого телефона — за посиланням або QR — а кошик буде один.")
+        return {"reply": reply, "why": intent["why"], "tools_used": [],
+                "routed": True, "result": {"proposal": proposal}}
     result = await host.call(intent["tool"], args)
     if result.get("error"):
         return {"reply": result["error"], "tools_used": [{"name": intent["tool"], "args": args}],
                 "routed": True}
+    # Перевірка перед оформленням — не пак, а картка з чотирма рядками:
+    # відповідь — вердикт, у телефон іде весь результат.
+    if result.get("checks"):
+        return {"reply": result.get("verdict") or "Готово.", "why": intent["why"],
+                "tools_used": [{"name": intent["tool"], "args": args}],
+                "routed": True, "result": result}
     # Правка пака повертає {pack, said} — показуємо той самий пак, що й сценарії.
     pack = result.get("pack") or result
     name = pack.get("name") or intent["tool"]
     summary = (result.get("said") or "") + (
         f" {name}: {pack['item_count']} позицій на {pack['total_uah']} ₴"
         if pack.get("item_count") is not None else "")
-    return {"reply": f"Модель офлайн, {intent['why']}.\n{summary.strip() or 'Готово.'}",
+    # Аналітика й вердикти паків не мають: відповідь — їхній заголовок.
+    if not summary.strip():
+        summary = result.get("headline") or result.get("verdict") or ""
+    return {"reply": summary.strip() or "Готово.", "why": intent["why"],
             "tools_used": [{"name": intent["tool"], "args": args}],
             "routed": True, "result": pack}
 
@@ -161,6 +191,32 @@ def _pick_model(models: list[str]) -> str:
 def _strip_think(text: str) -> str:
     text = re.sub(r"<think>.*?</think>", "", text or "", flags=re.DOTALL)
     return text.replace("<think>", "").replace("</think>", "").strip()
+
+
+async def runtime_hint() -> str | None:
+    """Чому модель повільна — читаємо в самої Ollama, а не здогадуємось.
+
+    `/api/ps` каже, скільки ваг лягло у відеопамʼять. `size_vram: 0` означає,
+    що 7B-модель рахується на процесорі: це ~2-3 токени за секунду, і будь-яка
+    відповідь у два речення впирається в таймаут. Гостю треба показати саме це,
+    а не голе «ReadTimeout» — інакше він шукатиме проблему в мережі.
+    """
+    try:
+        async with httpx2.AsyncClient(timeout=3) as client:
+            loaded = (await client.get(f"{OLLAMA_URL}/api/ps")).json().get("models") or []
+    except Exception:  # noqa: BLE001 — підказка не критична
+        return None
+    if not loaded:
+        return ("Модель не тримається в памʼяті — кожен запит починається з "
+                "її завантаження. Спробуй ще раз одразу після цього.")
+    row = loaded[0]
+    total, vram = row.get("size") or 0, row.get("size_vram") or 0
+    if total and vram / total < 0.5:
+        where = "цілком на процесорі" if not vram else f"на процесорі на {100 - vram*100//total}%"
+        return (f"Модель {row.get('name')} рахується {where} — це кілька токенів "
+                "за секунду. Постав відеокарту під Ollama або візьми меншу "
+                "модель (qwen2.5:3b), інакше відповідь не встигає.")
+    return None
 
 
 async def chat_available() -> dict:
@@ -226,9 +282,10 @@ async def narrate(phrase: str, result: dict, tool: str | None = None) -> dict:
     # списки й «143.94» тут зіпсували б звук так само.
     prompt = (f"Пак «Сільпо» ({tool or 'пак'}) на фразу «{phrase}» дав "
               f"результат: {payload}\n\n"
-              "Перекажи це одним-двома короткими реченнями українською: що "
-              "зібрано, скільки позицій, на яку суму. Тільки з цих даних, "
-              "нічого не додавай. Звичайний текст без списків і зірочок.")
+              "Перекажи це ОДНИМ коротким реченням українською: що зібрано, "
+              "скільки позицій і на яку суму. Товари НЕ перелічуй — вони й так "
+              "будуть на екрані. Суму пиши гривнями. Тільки з цих даних, нічого "
+              "не додавай. Звичайний текст без списків і зірочок.")
     convo = [{"role": "user", "content": prompt
               + (" /no_think" if model.startswith("qwen3") else "")}]
 
@@ -240,11 +297,19 @@ async def narrate(phrase: str, result: dict, tool: str | None = None) -> dict:
             response = await client.post(f"{OLLAMA_URL}/api/chat", json={
                 "model": model, "messages": convo, "stream": False,
                 "think": False, "keep_alive": "15m",
-                "options": {"temperature": 0.2, "num_predict": 80}})
+                # Кожен зайвий токен на процесорі — це ще ~0.4 с, тож стеля
+                # низька. Але не НАДТО: обрізане на півслові речення гірше за
+                # трохи повільніше ціле, а 48 різало саме так.
+                "options": {"temperature": 0.2, "num_predict": 64}})
     except Exception as exc:  # noqa: BLE001 — гість має побачити причину
+        ms = (time.perf_counter() - t0) * 1000
         log.warning("narrate FAIL %.0f ms | %s: %s",
-                    (time.perf_counter() - t0) * 1000, type(exc).__name__, str(exc)[:160])
-        return {"error": f"ШІ не відповів: {type(exc).__name__}", "model": model}
+                    ms, type(exc).__name__, str(exc)[:160])
+        timed_out = "Timeout" in type(exc).__name__
+        return {"error": (f"ШІ не встиг за {NARRATE_TIMEOUT:.0f} с" if timed_out
+                          else f"ШІ не відповів: {type(exc).__name__}"),
+                "hint": await runtime_hint() if timed_out else None,
+                "model": model}
 
     ms = (time.perf_counter() - t0) * 1000
     if response.status_code != 200:
@@ -259,11 +324,12 @@ async def narrate(phrase: str, result: dict, tool: str | None = None) -> dict:
     return {"reply": reply, "narrated": True, "model": model}
 
 
-async def chat(messages: list[dict], host, max_steps: int = 6) -> dict:
+async def chat(messages: list[dict], host, max_steps: int = 6,
+               pack_id: str | None = None) -> dict:
     """Tool-loop через Ollama; інструменти виконуються по MCP через host."""
     status = await chat_available()
     if not status["available"]:
-        return await _fallback(messages, host)
+        return await _fallback(messages, host, pack_id)
 
     model = status["model"]
     tools = [t for t in host.tools if t["function"]["name"] in ALLOWED]
@@ -329,8 +395,17 @@ _INTENTS = [
      "reorder_pack", {}, "впізнав «поповнити звичне»"),
     (("холодильник", "вдома нема", "що є вдома", "полиц"),
      "silpo_pantry_missing", {}, "впізнав «перевір холодильник»"),
-    (("сімʼ", "сім'", "родин", "на всіх", "на всю"),
-     "silpo_get_family_preferences", {}, "впізнав «на всю родину»"),
+    # Стоїть після «холодильник»: «перевір холодильник» — це комора, а
+    # «перевір перед оформленням» / «все гаразд?» — зведення чотирьох перевірок
+    # (доставка, вага, купон, промо) одним кроком перед касою.
+    (("оформ", "перевір", "до каси", "перед касою", "на касі", "сюрприз", "все гаразд"),
+     "precheck_pack", {}, "впізнав «перевірка перед оформленням»"),
+    # Стоїть ПЕРЕД «вечер» → meal_pack: «збери вечерю, щоб усім підійшло» —
+    # це фраза сценарію з пітчу, і вона має вести в родинну вечерю, а не в
+    # «страву на суму». Бюджет той самий, що на кнопці, — інакше з чату й
+    # з картки виходять різні паки.
+    (("сімʼ", "сім'", "родин", "на всіх", "на всю", "усім", "всім"),
+     "family_pack", {"theme": "вечеря", "max_uah": 1500}, "впізнав «на всю родину»"),
     (("тренуванн", "зал", "спав", "втомивс", "самопочутт"),
      "silpo_wellbeing_state", {}, "впізнав «за самопочуттям»"),
     (("влізе", "вага", "важк", "кілограм", "не влізе"),
@@ -358,10 +433,19 @@ _INTENTS = [
      "coupon_audit", {}, "впізнав «чек-детектив»"),
     (("зекономи", "економі", "знижок за"),
      "savings_report", {}, "впізнав «скільки зекономив»"),
-    (("куди йдуть", "витрат", "аналітик", "скільки я витрача"),
+    (("куди йдуть", "йдуть гроші", "куди гроші", "витрат", "аналітик", "скільки я витрача"),
      "spend_report", {}, "впізнав «куди йдуть гроші»"),
     (("плюхс", "підписк"),
      "plus_check", {}, "впізнав «чи вигідний Плюхс»"),
+    # Компанія — ПЕРЕД «зустріччю»: «компанією на пікнік» — це люди, а не
+    # набір на шістьох. «Запропонуй в компанію «Пікнік» закупку» — кошик із
+    # пропозицій усіх; «зберемось компанією» — пропозиція створити компанію
+    # й покликати людей за посиланням.
+    (("закупк", "запропонуй в компані", "запропонуй компані", "кошик компані"),
+     "crew_pack", {"max_uah": 1500}, "впізнав «закупка на компанію»"),
+    (("компанією", "компанію на", "зберемось", "зберемося", "збираємось", "збираємося",
+      "створи компані", "нова компані"),
+     "crew_propose", {}, "впізнав «зберемось компанією»"),
     (("шашлик", "настолк", "пікнік", "на шість", "на всіх нас", "компані"),
      "party_pack", {"theme": "шашлик", "people": 6}, "впізнав «зустріч»"),
     (("на тиждень", "тижнев", "закуп"),
@@ -371,6 +455,12 @@ _INTENTS = [
 ]
 
 _MEALS = ("сніданок", "обід", "вечеря", "десерт")
+
+# Відмінок після «на» → називний для назви компанії: «на пікнік» → «пікнік».
+_OCCASIONS = {"пікнік": "пікнік", "вечір": "вечір", "вечірку": "вечірка", "шашлики": "шашлики",
+              "шашлик": "шашлик", "дачу": "дача", "день народження": "день народження",
+              "новий рік": "новий рік", "гриль": "гриль", "футбол": "футбол",
+              "настолки": "настолки", "вихідні": "вихідні"}
 
 # Службові слова, які не є предметом правки: «прибери звідти пакет, будь ласка».
 _STOP = {"будь", "ласка", "мені", "звідти", "звідси", "пака", "паку", "пак",
@@ -409,6 +499,21 @@ def route_intent(text: str) -> dict:
                     x in low for x in ("акці", "знижк", "промо")):
                 args["prefer"] = "promo"
             return {"tool": tool, "args": args, "why": f"{why} — «{args['query']}»"}
+        if tool == "crew_propose":
+            # «зберемось компанією на пікнік у суботу» → привід «пікнік»,
+            # назва — те саме слово з великої: «Пікнік».
+            m = re.search(r"\bна\s+([а-яіїєґ'ʼ\-]+(?:\s+народження)?)", low)
+            occasion = _OCCASIONS.get((m.group(1) if m else "").strip(), None) \
+                or (m.group(1).strip() if m else "пікнік")
+            args["occasion"] = occasion
+            args["title"] = occasion[:1].upper() + occasion[1:]
+        if tool == "crew_pack":
+            # «в компанію з імʼям Пікнік закупку…» / «в компанію «Пікнік»»
+            m = (re.search(r"з\s+ім[’'ʼ]?ям\s+(.+?)\s+закупк", text or "", re.I)
+                 or re.search(r"«([^»]+)»", text or "")
+                 or re.search(r"компані[юї]\s+(.+?)\s+закупк", text or "", re.I))
+            if m:
+                args["crew_title"] = m.group(1).strip().strip("«»\"'")
         if tool == "meal_pack":
             for meal in _MEALS:
                 if meal[:5] in low:

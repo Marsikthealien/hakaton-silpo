@@ -56,6 +56,21 @@ def _from_cart(cart: dict) -> dict:
     }
 
 
+def slot_passed(start: str | None) -> bool:
+    """Чи слот кошика вже в минулому."""
+    if not start:
+        return False
+    import datetime as dt
+
+    try:
+        when = dt.datetime.fromisoformat(start)
+    except (TypeError, ValueError):
+        return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=dt.timezone.utc)
+    return when < dt.datetime.now(dt.timezone.utc)
+
+
 async def ensure(city: str | None = None, branch_id: str | None = None) -> dict:
     """Повертає готовий контекст, створивши кошик за потреби. Кешується в silpo.ctx."""
     if silpo.ctx.get("shoppingCartId") and silpo.ctx.get("timeslotStart") and not branch_id:
@@ -94,6 +109,19 @@ async def ensure(city: str | None = None, branch_id: str | None = None) -> dict:
     if not ctx.get("shoppingCartId"):
         raise SilpoError("Не вдалося отримати shoppingCartId.")
     silpo.ctx.update(ctx)
+
+    # Кошик переживає свій слот, і вчорашній слот ламає не лише чекаут: його
+    # вимагає ПОШУК. З простроченим слотом `find_products_batch` віддає майже
+    # порожню видачу, і пак тихо збирається зі сміття — на запит «піца»
+    # приходила піна для гоління. Тому слот лагодимо на вході, а не тоді,
+    # коли хтось нарешті відкриє кошик.
+    if slot_passed(silpo.ctx.get("timeslotStart")):
+        from . import facade
+
+        try:
+            await facade.refresh_timeslot()
+        except SilpoError:
+            pass  # слотів немає взагалі — про це скаже сам чекаут
     return silpo.ctx
 
 

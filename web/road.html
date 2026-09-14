@@ -99,7 +99,7 @@ async function tapLevel(level){
     <div class="rw"><div class="t"><b>${got.title}</b>
       <span>забрано ${(got.granted_at||'').slice(0,10)}</span></div>
       <span class="code">${got.code}</span></div>
-    <p class="soft">Код наш: у MCP «Сільпо» немає tool на видачу промокоду за прогрес.
+    <p class="soft">Це концепт, а не купон: видати знижку може лише «Сільпо». У MCP немає tool на видачу нагороди за прогрес.
       Саме його ми й пропонуємо — <span class="mono">silpo_claim_level_reward</span>.</p>`);
   if (!l.reward) return sheet(`${level} рівень`,
     reachable ? 'пройдено' : `треба ще ${uah(l.total - GAME.xp)} ₴ покупок`,
@@ -127,6 +127,7 @@ async function tapLevel(level){
 mountTop('road');
 $('#nav').innerHTML = appNav('profile');
 $('#ab-back').innerHTML = icon('back', 18);
+$('#ab-back').href = withRec('/game');
 (async () => { await loadStatus(); await load(); })();
 </script>
 </body>

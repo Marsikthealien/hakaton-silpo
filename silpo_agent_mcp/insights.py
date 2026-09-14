@@ -168,12 +168,19 @@ async def savings_report() -> dict:
 # ---------------------------------------------------------------------------
 # 3. Куди йдуть гроші
 # ---------------------------------------------------------------------------
-async def spend_report(window_days: int = 30) -> dict:
-    """Витрати по розділах каталогу і як вони змінились до попереднього періоду.
+async def spend_report(window_days: int = 180, top_items: int = 5) -> dict:
+    """Витрати по розділах каталогу — і що саме в кожному розділі.
 
-    Банківська аналітика, але про їжу: «напої +31%» видно лише тоді, коли
-    позиції чека розкласти по 28 розділах «Сільпо». Прив'язки товару до розділу
-    в API немає, тож розділ визначаємо за назвою — це названо чесно.
+    Банківська аналітика, але про їжу: «солодощі — 1 381 ₴, і це три
+    Парі-Брести» видно лише тоді, коли позиції чека розкласти по 28 розділах
+    «Сільпо» і в кожному лишити товари. Прив'язки товару до розділу в API
+    немає, тож розділ визначаємо за назвою — це названо чесно.
+
+    Args:
+        window_days: вікно, за яке рахуємо (типово пів року — портрет, а не
+            «цього місяця»); попереднє таке саме вікно йде для порівняння,
+            якщо в ньому є чеки.
+        top_items: скільки товарів показати в кожному розділі.
     """
     from .game import all_receipts
     from .proposed import _aisle_of
@@ -182,7 +189,9 @@ async def spend_report(window_days: int = 30) -> dict:
     today = _today()
     now: dict[str, float] = {}
     before: dict[str, float] = {}
+    items: dict[str, dict[str, dict]] = {}
     counted = 0
+    receipts_now = 0
     for order in orders:
         day = _date(order.get("createdAt"))
         if not day:
@@ -191,30 +200,48 @@ async def spend_report(window_days: int = 30) -> dict:
         bucket = now if age < window_days else (before if age < window_days * 2 else None)
         if bucket is None:
             continue
+        if bucket is now:
+            receipts_now += 1
         for line in order.get("products") or []:
-            _, title = _aisle_of(line.get("name") or "")
-            bucket[title] = round(bucket.get(title, 0)
-                                  + (line.get("price") or 0) * (line.get("quantity") or 1), 2)
+            name = line.get("name") or ""
+            _, title = _aisle_of(name)
+            qty = line.get("quantity") or 1
+            uah = round((line.get("price") or 0) * qty, 2)
+            bucket[title] = round(bucket.get(title, 0) + uah, 2)
             counted += 1
+            if bucket is now:
+                row = items.setdefault(title, {}).setdefault(
+                    name, {"name": name, "uah": 0.0, "times": 0, "qty": 0.0})
+                row["uah"] = round(row["uah"] + uah, 2)
+                row["times"] += 1
+                row["qty"] = round(row["qty"] + qty, 2)
 
     rows = []
     for title in sorted(set(now) | set(before), key=lambda t: -now.get(t, 0)):
         a, b = now.get(title, 0), before.get(title, 0)
+        top = sorted(items.get(title, {}).values(), key=lambda r: -r["uah"])[:top_items]
         rows.append({"category": title, "now_uah": round(a, 2), "before_uah": round(b, 2),
                      "delta_uah": round(a - b, 2),
-                     "delta_percent": round((a - b) / b * 100) if b else None})
+                     "delta_percent": round((a - b) / b * 100) if b else None,
+                     "items": top,
+                     "distinct": len(items.get(title, {}))})
     total_now = round(sum(now.values()), 2)
     total_before = round(sum(before.values()), 2)
     grew = [r for r in rows if r["delta_percent"] is not None and r["delta_percent"] >= 25]
+    span = ("пів року" if window_days == 180 else f"{window_days} днів")
+    fmt = lambda v: f"{v:,.0f}".replace(",", "\u202f")   # 8 402, а не 8402
+    headline = (f"За {span} — {fmt(total_now)} ₴ по {receipts_now} чеках"
+                if not total_before else
+                f"За {span} — {fmt(total_now)} ₴ проти {fmt(total_before)} ₴ у попередні {span}")
     return {
         "window_days": window_days,
         "total_now_uah": total_now, "total_before_uah": total_before,
+        "receipts_now": receipts_now,
         "delta_percent": (round((total_now - total_before) / total_before * 100)
                           if total_before else None),
         "categories": rows, "lines_counted": counted,
         "grew": sorted(grew, key=lambda r: -r["delta_percent"])[:3],
-        "headline": (f"За {window_days} днів — {total_now} ₴ проти {total_before} ₴ "
-                     f"у попередні {window_days}."),
+        "headline": headline + ".",
         "gap": ("Розділ товару визначено за назвою: `categoryId` немає в картці "
                 "товару навіть тоді, коли товар дістали запитом ПО КАТЕГОРІЇ."),
     }
@@ -747,6 +774,6 @@ async def certificate_apply(barcode: str, pincode: str | None = None) -> dict:
     cart = detail.get("cart") or detail
     calc = cart.get("calculation") or {}
     return {"applied": result.get("added") or [], "raw_summary": result.get("summary"),
-            "cart_total_uah": calc.get("total"),
+            "cart_total_uah": calc.get("totalAfterDiscounts", calc.get("total")),
             "certificates_in_cart": cart.get("certificates") or [],
             "note": "Кошик перечитано після запису — саме цього вимагає сам tool."}

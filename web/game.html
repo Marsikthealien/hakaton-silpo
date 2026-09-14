@@ -13,23 +13,17 @@
       <div class="appbar">
         <a class="iconbtn sm plain" href="/profile" title="Назад" id="ab-back"></a>
         <span class="ttl">Грибниця</span>
-        <a class="iconbtn sm plain" href="/road" title="Шлях рівнів" id="ab-road"></a>
       </div>
 
       <div class="pagebody">
         <section class="card gamecard">
           <div id="level" class="muted">Рахую з чеків…</div>
-          <div class="myc mini" id="myc"></div>
+          <div class="iconrow four" id="game-tiles"></div>
+          <!-- Коріння: від ніжки гриба вниз, вузол за вузлом — рівень за рівнем.
+               Пройдені вузли заповнені, поточний — світиться, нагороди — кожні
+               пʼять. Тап по вузлу — нагорода або що треба до нього. -->
+          <div class="myc root" id="myc"></div>
         </section>
-
-        <div class="iconrow" id="game-tiles" style="margin-top:14px"></div>
-
-        <a class="roadlink" href="/road" id="roadlink">
-          <span class="ic" id="road-ic"></span>
-          <span class="t"><b>Шлях рівнів</b>
-            <span id="road-sub">крива видно як стежку — від 1-го до 30-го</span></span>
-          <span class="go ghost">Відкрити</span>
-        </a>
       </div>
 
       <div id="nav"></div>
@@ -56,45 +50,91 @@ function shroomSvg(s, cx, cy, scale){
   </g>`;
 }
 
-/* Грибниця компактна: вузол на рівень, гілка на полицю, спора на досягнення.
-   Ваги не підписуємо — вони живуть у профілі, тут задають лише форму. */
-function mycelium(g){
-  const m = g.mycelium || {}, W = 680, H = 190, GROUND = 74;
-  const strands = m.strands || [], nodes = Math.max(1, m.nodes || 1);
-  const r = rnd(nodes * 7919 + strands.length * 31 + 1);
-  const maxW = Math.max(1, ...strands.map(s => Math.abs(s.weight)));
-  let paths = '', dots = '', spores = '';
-  strands.forEach((s, i) => {
-    const spread = strands.length > 1 ? i / (strands.length - 1) : .5;
-    const endX = 55 + spread * (W - 110);
-    const endY = GROUND + 40 + r() * (H - GROUND - 55);
-    const midX = W / 2 + (endX - W / 2) * .5;
-    const midY = GROUND + 16 + r() * 16;
-    const k = Math.abs(s.weight) / maxW;
-    paths += `<path d="M${W/2} ${GROUND} Q${midX.toFixed(0)} ${midY.toFixed(0)} ${endX.toFixed(0)} ${endY.toFixed(0)}"
-      fill="none" stroke="#7BE8A0" stroke-opacity="${(.26 + .5 * k).toFixed(2)}"
-      stroke-width="${(1 + 3 * k).toFixed(2)}" stroke-linecap="round"/>`;
-    const per = Math.max(1, Math.round(nodes / strands.length));
-    for (let j = 1; j <= per; j++){
-      const t = j / (per + 1);
-      const x = (1-t)*(1-t)*(W/2) + 2*(1-t)*t*midX + t*t*endX;
-      const y = (1-t)*(1-t)*GROUND + 2*(1-t)*t*midY + t*t*endY;
-      dots += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.9"
-        fill="#C7B4FA" fill-opacity=".9"/>`;
+/* Коріння. Від ніжки гриба вниз іде головний корінь, і на ньому — вузли:
+   один на рівень. Ліворуч-праворуч він відхиляється тим сильніше, чим
+   дорожчий рівень (крива 16 % видна, а не написана). Спори — досягнення. */
+let LEVELS = null;
+function rootScene(g, levels){
+  const W = 400, GROUND = 78, STEP = 46, AMP = 96;
+  const rows = levels.levels;
+  const H = GROUND + 30 + rows.length * STEP + 30;
+  const max = Math.max(...rows.map(l => l.need));
+  const r = rnd((g.level || 1) * 7919 + 17);
+  const claimed = g.claimed || {};
+  const ready = new Set((g.rewards_ready || []).map(x => x.level));
+
+  // точки вузлів: униз, корінь блукає ліворуч-праворуч повільною хвилею
+  // (не зигзагом), а розмах росте з ціною рівня — крива 16 % видна в геометрії
+  const phase = r() * 6.28;
+  const pts = rows.map((l, i) => {
+    const wander = Math.sin(i * .62 + phase) * .75 + Math.sin(i * 1.7 + phase * 2) * .25;
+    const x = W / 2 + wander * (14 + Math.sqrt(l.need / max) * AMP) + (r() - .5) * 8;
+    return { x, y: GROUND + 34 + i * STEP, l };
+  });
+  // плавний корінь через вузли (Catmull-Rom → кубічні сегменти), від ніжки
+  const all = [{ x: W / 2, y: GROUND - 2 }, { x: W / 2, y: GROUND + 8 }, ...pts];
+  let d = `M${all[0].x} ${all[0].y}`;
+  for (let k = 0; k < all.length - 1; k++) {
+    const p0 = all[Math.max(0, k - 1)], p1 = all[k], p2 = all[k + 1], p3 = all[Math.min(all.length - 1, k + 2)];
+    const c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+  }
+  // корінь тоншає з глибиною: два штрихи — широкий пройдений, тонкий попереду
+  const doneIdx = Math.max(0, rows.findIndex(l => l.level === g.level));
+  const yNow = pts[doneIdx] ? pts[doneIdx].y : GROUND;
+  let hairs = '';
+  pts.forEach((p, i) => {
+    const n = 1 + Math.round(r());
+    for (let k = 0; k < n; k++) {
+      const ang = (r() - .5) * 2.2 + (p.x < W / 2 ? Math.PI : 0);
+      const len = 14 + r() * 26;
+      const ex = p.x + Math.cos(ang) * len, ey = p.y + 6 + Math.sin(ang) * len * .6 + r() * 8;
+      hairs += `<path d="M${p.x.toFixed(1)} ${(p.y + 4).toFixed(1)} Q${((p.x + ex) / 2 + (r() - .5) * 10).toFixed(1)} ${((p.y + ey) / 2 + 6).toFixed(1)} ${ex.toFixed(1)} ${ey.toFixed(1)}"
+        fill="none" stroke="#7BE8A0" stroke-opacity="${i < doneIdx ? .38 : .18}" stroke-width="1.2" stroke-linecap="round"/>`;
     }
   });
-  for (let i = 0; i < (m.spores || 0); i++){
-    const x = 35 + r() * (W - 70), y = GROUND + 14 + r() * (H - GROUND - 26);
-    spores += `<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="2.6" fill="#FFD979">
-      <animate attributeName="fill-opacity" values="1;.3;1" dur="${(2.4+r()*2).toFixed(1)}s"
-        repeatCount="indefinite"/></circle>`;
+  let spores = '';
+  for (let i = 0; i < ((g.mycelium || {}).spores || 0); i++) {
+    const x = 24 + r() * (W - 48), y = GROUND + 20 + r() * (H - GROUND - 40);
+    spores += `<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="2.4" fill="#FFD979">
+      <animate attributeName="fill-opacity" values="1;.3;1" dur="${(2.4 + r() * 2).toFixed(1)}s" repeatCount="indefinite"/></circle>`;
   }
-  return `<svg viewBox="0 0 ${W} ${H}" role="img"
-      aria-label="Грибниця: ${nodes} вузлів рівня, ${strands.length} гілок, ${m.spores||0} спор">
-    <g transform="translate(${W/2} ${GROUND}) scale(.62) translate(${-W/2} ${-GROUND})">
+  const nodes = pts.map((p, i) => {
+    const l = p.l, done = l.level <= g.level, now = l.level === g.level;
+    const got = claimed[String(l.level)], gift = !!l.reward, can = ready.has(l.level);
+    const left = p.x > W / 2;   // підпис — у бік центру, де є місце
+    const label = now ? 'ти тут' : l.skin ? `скін «${l.skin}»`
+      : gift ? (got ? 'забрано' : can ? 'нагорода чекає' : l.reward.title)
+      : (done ? '' : uah(l.need) + ' ₴');
+    return `<g class="lv ${done ? 'done' : 'ahead'} ${now ? 'now' : ''} ${can ? 'can' : ''}"
+        onclick="tapLevel(${l.level})" style="cursor:pointer" id="l${l.level}">
+      ${now ? `<circle cx="${p.x.toFixed(1)}" cy="${p.y}" r="17" fill="#FFD979" fill-opacity=".18">
+        <animate attributeName="r" values="14;20;14" dur="2.6s" repeatCount="indefinite"/></circle>` : ''}
+      ${can ? `<circle cx="${p.x.toFixed(1)}" cy="${p.y}" r="13" fill="none" stroke="#FFD979" stroke-width="1.5">
+        <animate attributeName="r" values="11;15;11" dur="1.8s" repeatCount="indefinite"/></circle>` : ''}
+      <circle cx="${p.x.toFixed(1)}" cy="${p.y}" r="${now ? 9 : 6.5}"
+        fill="${now ? '#FFD979' : done ? '#C7B4FA' : '#1C1730'}" stroke="${done || now ? 'none' : '#7BE8A0'}" stroke-width="1.6"/>
+      ${gift && !got ? `<circle cx="${(p.x + (now ? 8 : 6)).toFixed(1)}" cy="${p.y - (now ? 8 : 6)}" r="3" fill="#FF8A34"/>` : ''}
+      <text x="${(p.x + (left ? -16 : 16)).toFixed(1)}" y="${p.y + 4}" text-anchor="${left ? 'end' : 'start'}"
+        font-size="12" font-weight="700" fill="${now ? '#FFD979' : done ? '#E8E4F6' : '#8E88A8'}">${l.level}</text>
+      ${label ? `<text x="${(p.x + (left ? -1 : 1) * (l.level > 9 ? 40 : 32)).toFixed(1)}" y="${p.y + 4}" text-anchor="${left ? 'end' : 'start'}"
+        font-size="10.5" fill="${now ? '#FFD979' : '#8E88A8'}">${label}</text>` : ''}
+    </g>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Коріння: ${g.level} рівень">
+    <defs><clipPath id="doneclip"><rect x="0" y="0" width="${W}" height="${yNow}"/></clipPath>
+      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#EDF1FA"/><stop offset="1" stop-color="#E4E9F6"/></linearGradient>
+      <linearGradient id="soil" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1A1526"/><stop offset="1" stop-color="#0E0B16"/></linearGradient></defs>
+    <rect x="0" y="0" width="${W}" height="${GROUND}" fill="url(#sky)"/>
+    <rect x="0" y="${GROUND}" width="${W}" height="${H - GROUND}" fill="url(#soil)"/>
+    <g transform="translate(${W/2} ${GROUND}) scale(.55) translate(${-W/2} ${-GROUND})">
       ${shroomSvg(g.skin, W/2, GROUND, 1)}</g>
     <line x1="0" y1="${GROUND}" x2="${W}" y2="${GROUND}" stroke="#3A3450" stroke-width="1"/>
-    ${paths}${dots}${spores}</svg>`;
+    ${hairs}
+    <path d="${d}" fill="none" stroke="#7BE8A0" stroke-opacity=".28" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="${d}" fill="none" stroke="#7BE8A0" stroke-opacity=".85" stroke-width="4" stroke-linecap="round" clip-path="url(#doneclip)"/>
+    ${spores}${nodes}</svg>`;
 }
 
 async function loadGame(){
@@ -110,31 +150,56 @@ async function loadGame(){
         <div class="soft"><b>${uah(g.xp)} ₴</b> досвіду з ${g.receipts_counted} чеків ·
           до ${g.level+1} рівня ще <b>${uah(g.need_for_next)} ₴</b></div>
       </div>
-    </div>
-    <p class="soft" style="margin:9px 0 0">Досвід — округлені суми чеків. Накрутити не
-      можна: агент бере їх із <span class="mono">silpo_get_my_offline_orders</span>.</p>`;
-  $('#myc').innerHTML = mycelium(g);
+    </div>`;
   renderTiles();
-  $('#road-sub').textContent =
-    `ти на ${g.level}-му · до наступного ${uah(g.need_for_next)} ₴` +
-    (g.rewards_ready.length ? ` · ${g.rewards_ready.length} нагород чекає` : '');
+  LEVELS = await api('/api/game/levels?upto=' + (g.level + 6));
+  if (!bad(LEVELS)) $('#myc').innerHTML = rootScene(g, LEVELS);
+}
+
+/* Тап по вузлу: нагорода, або що треба, щоб дійти. */
+async function tapLevel(level){
+  const l = LEVELS.levels.find(x => x.level === level);
+  const got = (GAME.claimed || {})[String(level)];
+  const reachable = level <= GAME.level;
+  if (got) return sheet(`${level} рівень`, l.reward.title, `
+    <div class="rw"><div class="t"><b>${got.title}</b>
+      <span>забрано ${(got.granted_at||'').slice(0,10)}</span></div>
+      <span class="code">${got.code}</span></div>`);
+  if (!l.reward) return sheet(`${level} рівень`,
+    reachable ? 'пройдено' : `треба ще ${uah(l.total - GAME.xp)} ₴ покупок`,
+    `<p>${l.skin ? `Тут відкривається скін <b>«${l.skin}»</b>.` : 'Нагороди на цьому рівні немає — вони кожні пʼять.'}</p>
+     <p class="soft">Перехід на цей рівень — ${uah(l.need)} ₴, разом від початку — ${uah(l.total)} ₴.</p>`);
+  if (!reachable) return sheet(`${level} рівень`, l.reward.title, `
+    <p>Ще не досягнуто. Треба <b>${uah(l.total - GAME.xp)} ₴</b> покупок —
+      це ${Math.max(1, Math.round((l.total - GAME.xp) / 280))} середніх чеків.</p>
+    <p class="soft">Нагорода: ${l.reward.title} (${l.reward.kind}).</p>`);
+  const r = await api('/api/game/claim','POST',{level});
+  if (bad(r)) return;
+  if (!r.granted) return toast(r.reason || 'Нема чого забирати');
+  sheet('Нагорода твоя', `${level} рівень`, `
+    <div class="rw"><div class="t"><b>${r.granted.title}</b>
+      <span>${r.granted.kind}</span></div>
+      <span class="code">${r.granted.code}</span></div>`);
+  await loadGame();
+}
+function focusLevel(level){
+  closeSheet();
+  const el = document.getElementById('l' + level);
+  if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
 function renderTiles(){
   const g = GAME;
   const ready = (g.rewards_ready || []).length;
   const rows = [
-    ['trophy',   'Досягнення', 'рахуються з чеків',
-     `${g.achievements_done}/${g.achievements_total}`, 'openAch()', ''],
-    ['mushroom', 'Скіни', 'кожні 10 рівнів',
-     `${g.skins_unlocked.length}/${g.skins_total}`, 'openSkins()', ''],
-    ['compass',  'Дизайнерські «Сільпо»', 'магазини-концепції',
-     '·', 'openThemed()', '', 'themed-n'],
-    ['gift',     'Нагороди', 'промокод за рівень', ready, 'openRewards()', ready ? 'warn' : ''],
+    ['trophy',   'Досягнення', `${g.achievements_done}/${g.achievements_total}`, 'openAch()', ''],
+    ['mushroom', 'Скіни',      `${g.skins_unlocked.length}/${g.skins_total}`, 'openSkins()', ''],
+    ['compass',  'Магазини', '·', 'openThemed()', '', 'themed-n'],
+    ['gift',     'Нагороди',   ready, 'openRewards()', ready ? 'warn' : ''],
   ];
-  $('#game-tiles').innerHTML = rows.map(([ic, title, sub, n, act, cls, id]) => `
-    <button class="tile" onclick="${act}"><span class="em">${icon(ic, 22)}</span>
-      <b>${title}</b><span>${sub}</span>
+  $('#game-tiles').innerHTML = rows.map(([ic, title, n, act, cls, id]) => `
+    <button class="tile sm" onclick="${act}"><span class="em">${icon(ic, 20)}</span>
+      <b>${title}</b>
       <span class="n ${cls}"${id ? ` id="${id}"` : ''}>${n}</span></button>`).join('');
 }
 
@@ -187,36 +252,28 @@ async function openThemed(){
         <span style="margin-top:5px">${b.about}</span>
         ${b.source ? `<a class="link" href="${b.source}" target="_blank"
           rel="noopener">джерело ↗</a>` : ''}
-      </div>`).join('')}</div>
-    <p class="soft" style="margin:12px 0 0">Магазини й теми справжні — з пресрелізів
-      мережі, звірені з <span class="mono">silpo_list_branches</span>. Немає в API лише
-      самої прив'язки «філія → концепція», а дизайнерських супермаркетів у мережі
-      понад 60. Саме тому потрібен <span class="mono">silpo_get_themed_branches</span>.</p>`);
+      </div>`).join('')}</div>`);
 }
 
 function openRewards(){
   const g = GAME;
   const ready = g.rewards_ready || [];
   const got = Object.values(g.claimed || {});
-  sheet('Нагороди за рівні', 'Що вищий рівень — то кращий промокод. Кожні 5 рівнів', `
+  sheet('Нагороди за рівні', '', `
     ${ready.map(r => `<div class="rw"><div class="t"><b>${r.title}</b>
         <span>за ${r.level} рівень · ${r.kind}</span></div>
-        <a class="go" href="/road#l${r.level}" style="text-decoration:none">Забрати на шляху</a></div>`).join('')}
+        <button class="go" onclick="focusLevel(${r.level})">Забрати</button></div>`).join('')}
     ${got.map(r => `<div class="rw" style="border-style:solid;border-color:var(--line);
         background:var(--tint)"><div class="t"><b>${r.title}</b>
         <span>забрано ${(r.granted_at||'').slice(0,10)}</span></div>
         <span class="code">${r.code}</span></div>`).join('')}
-    ${!ready.length && !got.length ? '<p class="soft">Нагород поки немає.</p>' : ''}
-    ${g.next_reward ? `<p class="soft" style="margin-top:8px">Наступна — «${g.next_reward.title}»
-      через ${g.next_reward.levels_away} рівень(-і).</p>` : ''}
-    <p class="soft">Нагорода забирається натисканням на сам рівень на шляху.</p>`);
+    ${!ready.length && !got.length ? '<p class="soft">Нагород поки немає.</p>' : ''}`);
 }
 
 mountTop('game');
 $('#nav').innerHTML = appNav('profile');
 $('#ab-back').innerHTML = icon('back', 18);
-$('#ab-road').innerHTML = icon('map', 18);
-$('#road-ic').innerHTML = icon('map', 22);
+$('#ab-back').href = withRec('/profile');
 (async () => {
   await loadStatus();
   await loadGame();

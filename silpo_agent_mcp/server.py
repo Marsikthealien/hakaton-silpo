@@ -98,8 +98,12 @@ async def cart_status() -> dict:
     delivery = calc.get("delivery") or {}
     products = (cart.get("shipments") or [{}])[0].get("products") or []
     goods = calc.get("productsTotal") or 0
-    total = calc.get("total") or 0
-    service = round(total - goods - (delivery.get("total") or 0), 2)
+    # Гість платить `totalAfterDiscounts` — саме це число має бути на екрані.
+    # `total` — сума ДО знижок; сервісний збір рахуємо з неї, бо знижки на
+    # нього не діють.
+    gross = calc.get("total") or 0
+    total = calc.get("totalAfterDiscounts", gross) or gross
+    service = round(gross - goods - (delivery.get("total") or 0), 2)
     return {
         "items": [{"product_id": p.get("productId"), "slug": p.get("slug"),
                    "name": p.get("name"), "image": p.get("image"),
@@ -142,6 +146,7 @@ PROPOSED = (
     ("silpo_select_promos", proposed.select_promos),
     ("silpo_pantry_sync", proposed.pantry_sync),
     ("silpo_pantry_missing", proposed.pantry_missing),
+    ("silpo_pantry_state", proposed.pantry_state),
     ("silpo_wellbeing_sync", proposed.wellbeing_sync),
     ("silpo_wellbeing_state", proposed.wellbeing_state),
     ("silpo_list_connectors", proposed.connectors),
@@ -161,6 +166,22 @@ PROPOSED = (
     ("silpo_get_taste_weights", weights.snapshot),
     ("silpo_bump_taste_weight", weights.bump),
     ("silpo_rebuild_taste_weights", weights.rebuild_from_receipts),
+
+    # Компанія — новий концепт. Разова група під подію: кожен додає свої
+    # обмеження й свої пропозиції, кошик виходить один, розрахунок теж.
+    # Це НЕ «сімейна група» «Сільпо»: там сталий звʼязок акаунтів, тут — вечір.
+    ("silpo_create_crew", proposed.create_crew),
+    ("silpo_get_crew", proposed.get_crew),
+    ("silpo_list_crews", proposed.list_crews),
+    ("silpo_crew_join", proposed.crew_join),
+    ("silpo_crew_suggest", proposed.crew_suggest),
+    ("silpo_crew_leave", proposed.crew_leave),
+    ("silpo_crew_paid", proposed.crew_paid),
+    ("silpo_crew_split", proposed.crew_split),
+    ("silpo_crew_share", proposed.crew_share),
+    ("silpo_crew_share_answer", proposed.crew_share_answer),
+    ("silpo_delete_crew", proposed.delete_crew),
+    ("silpo_clear_crews", proposed.clear_crews),
 )
 
 TOOLS = (
@@ -176,11 +197,12 @@ TOOLS = (
     facade.pack_to_cart, cart_status,
     facade.set_cart_quantity, facade.remove_from_cart, facade.refresh_timeslot,
     facade.find_address, facade.my_perks, facade.expiring, facade.payment_hint, facade.screen_pack,
+    facade.precheck_pack,
     facade.set_branch, facade.mcp_trace,
 
     # Сценарії на бюджет, тиждень, компанію та нагадування
     facade.budget_pack, facade.weekly_pack, facade.party_pack, facade.reminders,
-    facade.family_pack,
+    facade.family_pack, facade.crew_pack,
 
     # Правка пака словами: «прибери пакет», «додай молоко», «заміни чипси»
     facade.pack_add, facade.pack_remove, facade.pack_set_qty, facade.pack_swap_named,

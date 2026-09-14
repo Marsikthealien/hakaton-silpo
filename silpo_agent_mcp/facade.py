@@ -169,13 +169,20 @@ def _has_offer(product: dict) -> bool:
 
 def _best(candidates: list[dict], avoid_terms: list[str], budget_left: float | None,
           head: int = RELEVANT_HEAD, query: str = "",
-          prefer_promo: bool = False, novelty: str = "any") -> tuple[dict | None, str]:
+          prefer_promo: bool = False, novelty: str = "any",
+          dropped: list[dict] | None = None,
+          taken: set | None = None) -> tuple[dict | None, str]:
     """Найкращий кандидат із ГОЛОВИ видачі.
 
     Пошук «Сільпо» ранжує добре: за запитом «яйця» перші позиції — курячі яйця,
     а шоколадне яйце із сюрпризом лежить шостим. Тому спершу відрізаємо голову
     релевантності, і лише всередині неї шукаємо найдешевше. Якщо сортувати за
     ціною весь список, в омлет потрапляє шоколадне яйце.
+
+    `dropped` — куди складати те, що зняла алергія. Доти це було видно лише
+    тоді, коли ПІД ЗАБОРОНУ потрапляв увесь запит; товар, відсіяний тихо на
+    користь сусіднього, не лишав сліду взагалі. А перевірка за назвою
+    наближена, тож гість має бачити, на якому слові вона спрацювала.
 
     Повертає (товар, причина_відмови_якщо_None).
     """
@@ -185,11 +192,22 @@ def _best(candidates: list[dict], avoid_terms: list[str], budget_left: float | N
         if not product.get("available") or (product.get("stock") or 0) <= 0:
             reason = "немає в наявності"
             continue
-        if _is_non_food(product.get("name", "")):
+        # Той самий товар годиться одразу кільком запитам: «вода» від трекера
+        # і «вода мінеральна» від ваг смаку знаходять одну пляшку. У паку вона
+        # має бути один раз, інакше гість бачить дубль і не довіряє решті.
+        if taken and product.get("id") in taken:
+            reason = "вже є в цьому паку"
+            continue
+        # Нехарчове відсіюємо, ЯКЩО його не просили: «шампунь» у вечері зайвий.
+        # Але коли сам запит нехарчовий — «корм для котів», — цей же фільтр
+        # вигрібав усю видачу, і кіт лишався без вечері.
+        if _is_non_food(product.get("name", "")) and not _is_non_food(query):
             continue
         hit = _blocked_by(product.get("name", ""), avoid_terms)
         if hit:
             reason = f"пропущено через «{hit}»"
+            if dropped is not None:
+                dropped.append({"query": query, "name": product.get("name"), "term": hit})
             continue
         pool.append(product)
         if len(pool) >= head:
@@ -270,14 +288,18 @@ async def build_pack(name: str, items: list[str], max_uah: float | None = None,
     found = await search(items, limit=8)
 
     chosen, skipped, total = [], [], 0.0
+    dropped: list[dict] = []
+    picked_ids: set = set()
     for query in items[:MAX_BATCH]:
         candidates = found.get(query) or []
         left = None if max_uah is None else max_uah - total
         product, reason = _best(candidates, avoid_terms, left, query=query,
-                                prefer_promo=prefer_promo, novelty=novelty)
+                                prefer_promo=prefer_promo, novelty=novelty,
+                                dropped=dropped, taken=picked_ids)
         if not product:
             skipped.append({"query": query, "reason": reason})
             continue
+        picked_ids.add(product.get("id"))
         item = to_item(product, query)
         if product.pop("_novelty_relaxed", False):
             item["novelty_relaxed"] = True
@@ -292,6 +314,16 @@ async def build_pack(name: str, items: list[str], max_uah: float | None = None,
     pack["weights_used"] = True
     pack["skipped"] = skipped
     pack["avoid_applied"] = avoid_terms
+    # Однакові товари трапляються в кількох запитах — у переліку виключень
+    # вони потрібні один раз, і сотня рядків тут нічого не пояснює.
+    seen: set[tuple] = set()
+    excluded: list[dict] = []
+    for row in dropped:
+        key = (row["name"], row["term"])
+        if key not in seen and len(excluded) < 12:
+            seen.add(key)
+            excluded.append(row)
+    pack["excluded"] = excluded
     pack["branch"] = silpo.ctx.get("branchId")
     return pack
 
@@ -321,9 +353,13 @@ async def _similar(slug: str, limit: int = 25) -> list[dict]:
     """Схожі товари за slug — у наявності, їстівні, без самого себе."""
     if not slug:
         return []
+    # З релізу MCP 1.110.1 точний stock «схожих» вимагає слоту доставки —
+    # без нього наявність неточна (у changelog це позначено як breaking change).
     data = await silpo.call("silpo_get_similar_products", {
         "branchId": silpo.ctx["branchId"], "slug": slug,
-        "deliveryType": silpo.ctx["deliveryType"], "limit": limit})
+        "deliveryType": silpo.ctx["deliveryType"],
+        "timeslotStart": silpo.ctx.get("timeslotStart"),
+        "timeslotEnd": silpo.ctx.get("timeslotEnd"), "limit": limit})
     return [p for p in (data.get("products") or data.get("items") or [])
             if p.get("available") and (p.get("stock") or 0) > 0
             and p.get("slug") != slug and not _is_non_food(p.get("name", ""))]
@@ -439,6 +475,14 @@ async def swap_item(pack_id: str, product_id: str, prefer: str = "cheaper") -> d
     await context.ensure()
     pool = [p for p in await _similar(current["slug"])
             if str(p.get("id")) != str(product_id)]
+    if not pool:
+        # «Схожі» в API — не для кожного товару: для пакетів для сміття
+        # відповідь буває порожньою. Тоді шукаємо за назвою — так само, як
+        # під час збирання пака, — щоб «Обрати інший» не впирався в стіну.
+        found = await search([_short_query(current["name"], 3)], limit=8)
+        pool = [p for p in next(iter(found.values()), [])
+                if str(p.get("id")) != str(product_id)
+                and p.get("available") and (p.get("stock") or 0) > 0]
     avoid_terms = expand_avoid(pack.get("avoid"))
     pool = [p for p in pool if not _blocked_by(p.get("name", ""), avoid_terms)]
     if not pool:
@@ -502,8 +546,13 @@ async def pack_to_cart(pack_id: str, replace: bool = True) -> dict:
     in_cart = (cart.get("shipments") or [{}])[0].get("products") or []
     packs.record_use(pack_id)
     from . import weights as tastes
+    # Вагу рухає лише те, що ЩОЙНО поклали. Доти bump ішов по всьому кошику,
+    # і три натискання «У кошик» робили «регулярним» усе, що в ньому лежало,
+    # включно з тим, що гість узагалі не обирав.
+    just_added = {str(p["productId"]) for p in products}
     for line in in_cart:
-        tastes.bump(line.get("name", ""), "cart", float(line.get("quantity") or 1))
+        if str(line.get("productId")) in just_added:
+            tastes.bump(line.get("name", ""), "cart", float(line.get("quantity") or 1))
 
     # tool сам попереджає: success=true означає лише «запит прийнято».
     # Тому звіряємо, що реально лягло в кошик, і кажемо про розбіжності вголос.
@@ -519,7 +568,13 @@ async def pack_to_cart(pack_id: str, replace: bool = True) -> dict:
     return {
         "pack": {"id": pack["id"], "name": pack["name"]},
         "requested": len(products), "in_cart": len(in_cart),
-        "total_uah": calc.get("total"), "subtotal_uah": calc.get("subTotal"),
+        # Платить гість `totalAfterDiscounts`, а не `total`: у релізі 1.110.0
+        # «Сільпо» це прописали окремо — «always show this to the user, not
+        # total». Ми показували `total`, тобто суму ДО знижок: число більше за
+        # те, що спишеться з картки.
+        "total_uah": calc.get("totalAfterDiscounts", calc.get("total")),
+        "total_before_discount_uah": calc.get("total"),
+        "subtotal_uah": calc.get("subTotal"),
         "discount_uah": calc.get("subDiscount"),
         "checkout_url": CHECKOUT_URL,
         "warnings": [v for v in (calc.get("validations") or [])
@@ -594,6 +649,9 @@ async def my_perks() -> dict:
     }
 
 
+ORDER_WIDE = ("чек", "замовлен", "онлайн", "покупк")
+
+
 async def optimize_pack(pack_id: str) -> dict:
     """Підбирає, які з ТВОЇХ купонів і промо спрацюють саме на цей пак.
 
@@ -608,11 +666,45 @@ async def optimize_pack(pack_id: str) -> dict:
     perks = await my_perks()
     items = pack["items"]
 
-    matched_coupons = []
+    matched_coupons, ineligible = [], []
+    seen_promos: set = set()
     for coupon in perks["coupons"]:
+        # Один і той самий купон видають двічі (два id, один promoId) —
+        # показуємо раз, бо й спрацює він раз.
+        if coupon.get("promo_id") in seen_promos:
+            continue
         hits = _match(coupon["text"], items) if coupon.get("active") else []
-        if hits:
-            matched_coupons.append({**coupon, "applies_to": hits})
+        # Купон «на онлайн чек» не про товар, а про все замовлення — за
+        # назвами товарів він не збігається ні з чим, хоча саме він на
+        # цьому акаунті найвагоміший. Такі перевіряємо окремо.
+        order_wide = (not hits and bool(coupon.get("active"))
+                      and any(k in (coupon.get("text") or "").lower() for k in ORDER_WIDE))
+        if not hits and not order_wide:
+            continue
+        # `active` — лише перемикач гостя. Чи купон узагалі можна застосувати
+        # зараз, каже canBeAppliedToOrder із деталей (у MCP з 1.110.0, учора):
+        # він враховує ще й стан життєвого циклу. Читаємо його для тих, що
+        # лягли на кошик, — по одному купону за виклик, тож лише для них.
+        try:
+            detail = await silpo.call("silpo_get_coupon_details",
+                                      {"businessCouponId": coupon["id"]})
+            info = detail.get("coupon") or detail
+            eligible = info.get("canBeAppliedToOrder")
+            state = info.get("state")
+            warning = info.get("warningText")
+            limit_text = info.get("limitText") or ""
+        except SilpoError:
+            eligible, state, warning, limit_text = None, None, None, ""
+        row = {**coupon, "applies_to": hits, "eligible": eligible, "state": state,
+               "order_wide": order_wide, "warning": warning,
+               # «Діє лише при замовленні доставки» — з самовивозом не спрацює,
+               # і про це гість дізнається на касі. Читаємо з limitText.
+               "delivery_only": "доставк" in limit_text.lower()}
+        if order_wide:
+            row["applies_to"] = [{"name": "усе онлайн-замовлення", "confidence": "точний"}]
+        if coupon.get("promo_id") is not None:
+            seen_promos.add(coupon["promo_id"])
+        (matched_coupons if eligible is not False else ineligible).append(row)
 
     scored = []
     for promo in perks["promos"]:
@@ -632,6 +724,7 @@ async def optimize_pack(pack_id: str) -> dict:
         "multibuy": multibuy,
         "multibuy_saving_uah": round(sum(o["saving_uah"] for o in multibuy), 2),
         "coupons": matched_coupons,
+        "coupons_ineligible": ineligible,
         "activate_promos": [{"id": p["id"], "text": p["text"], "reward": p["reward"],
                              "applies_to": p["applies_to"]} for p in recommended],
         "promo_limit": perks["promo_limit"],
@@ -899,7 +992,7 @@ async def payment_hint(pack_total_uah: float | None = None) -> dict:
     """
     detail = await context.cart_details()
     calc = (detail.get("cart") or detail).get("calculation") or {}
-    total = calc.get("total") or 0
+    total = calc.get("totalAfterDiscounts", calc.get("total")) or 0
     blocked = []
     for rule in calc.get("validations") or []:
         ctx = rule.get("context") or {}
@@ -965,6 +1058,170 @@ def screen_pack(pack_id: str, avoid: list[str] | None = None) -> dict:
             "checked_for": terms, "flagged": flagged, "clean": not flagged,
             "note": ("Перевірка за назвою товару: склад MCP «Сільпо» не віддає "
                      "(attributes містять лише країну, ТМ, продавця та БЖУ).")}
+
+
+# Демо-адреса гостя: Оболонь, звідки до найближчого «Сільпо» 0,8 км. У продукті
+# на це місце стає адреса з профілю або геолокація телефона — у MCP адреси
+# гостя немає, а кошик її зберігає лише після першого оформлення.
+HOME_LAT, HOME_LON = 50.5187, 30.4986
+
+
+def _fmt_uah(value) -> str:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    text = f"{v:,.0f}" if v == int(v) else f"{v:,.2f}"
+    return text.replace(",", " ") + " ₴"
+
+
+async def precheck_pack(pack_id: str | None = None, latitude: float | None = None,
+                        longitude: float | None = None) -> dict:
+    """Перевірка перед «Оформити»: доставка, вага, купон, промо — однією карткою.
+
+    Це ті самі чотири речі, які асистент «Сільпо» має в API і не читає перед
+    оплатою: поріг безкоштовної доставки й відстань до магазину, ліміт ваги
+    слоту, чи ляже купон на кошик (canBeAppliedToOrder) і які промо варто
+    активувати. Жодного нового джерела даних — лише зведення в один крок,
+    бо гість питає «чи все гаразд?» один раз, а не чотири.
+
+    Args:
+        pack_id: який пак перевіряти; без id — останній зібраний.
+        latitude, longitude: звідки гість; без них — адреса кошика або демо-адреса.
+    """
+    from . import proposed
+
+    pack = _pack_or_last(pack_id)
+    total = float(pack.get("total_uah") or 0)
+    checks: list[dict] = []
+
+    # 1. Топати чи замовити — по координатах гостя. Адресу кошика не беремо:
+    # кошик самовивозу зберігає координати МАГАЗИНУ, а не дому.
+    lat = float(latitude if latitude is not None else HOME_LAT)
+    lon = float(longitude if longitude is not None else HOME_LON)
+    try:
+        delivery = await proposed.estimate_delivery(lat, lon, cart_total_uah=total)
+        options = delivery.get("options") or []
+        pickup = next((o for o in options if o["delivery_type"] == "SelfPickup"), None)
+        # Порівнюємо зі звичайною доставкою додому; B2B і розширений
+        # асортимент — окремі історії, гостю вони не про «замовити чи топати».
+        home = (next((o for o in options if o["delivery_type"] == "DeliveryHome"), None)
+                or next((o for o in options
+                         if o["delivery_type"] not in ("SelfPickup", "B2B")), None))
+        parts = []
+        if pickup:
+            km = pickup.get("distance_km")
+            parts.append(f"самовивіз{f' за {km:.1f} км' if km is not None else ''} — "
+                         f"{_fmt_uah(pickup['cost_uah'])}")
+        if home:
+            parts.append(f"{home['label'].lower()} {_fmt_uah(home['cost_uah'])}")
+            tier = home.get("next_tier")
+            if tier and tier.get("from_uah"):
+                parts.append(f"від {_fmt_uah(tier['from_uah'])} — {_fmt_uah(tier['cost_uah'])}")
+        below = [o for o in (pickup, home) if o and not o.get("meets_minimum")]
+        # Гаразд, якщо хоч один зі способів приймає кошик такої суми.
+        ok = (any(o.get("meets_minimum") for o in (pickup, home) if o)
+              if (pickup or home) else None)
+        checks.append({
+            "id": "delivery", "title": "Топати чи замовити", "ok": ok,
+            "summary": " · ".join(parts) or "способів отримання не знайдено",
+            "detail": (f"пак {_fmt_uah(total)} нижче мінімуму для: "
+                       + ", ".join(o["label"].lower() for o in below)
+                       if below and not ok else None),
+            "tools": ["silpo_list_branches", "silpo_get_time_slots", "silpo_estimate_delivery⁺"],
+        })
+    except SilpoError as exc:
+        checks.append({"id": "delivery", "title": "Топати чи замовити", "ok": None,
+                       "summary": str(exc), "tools": ["silpo_estimate_delivery⁺"]})
+
+    # 2. Вага — по справжньому кошику: ліміт лежить у слоті, а не в товарі.
+    #    Кошик читаємо один раз — і для ваги, і для «чи пак уже в ньому».
+    try:
+        ctx = await context.ensure()
+        detail = await silpo.call("silpo_get_shopping_cart_by_id",
+                                  {"shoppingCartId": ctx["shoppingCartId"]})
+        cart = detail.get("cart") or detail
+        weight = await cart_weight_check(cart)
+        caps = sorted([o for o in weight.get("options") or [] if o.get("max_kg")],
+                      key=lambda o: o["delivery_type"] != "DeliveryHome")
+        cap_text = ", ".join(f"{o['label'].lower()} до {o['max_kg']:.0f} кг" for o in caps[:2])
+        lines = (cart.get("shipments") or [{}])[0].get("products") or []
+        ids = {str(p.get("productId")) for p in lines}
+        in_cart = sum(1 for i in pack["items"] if str(i.get("product_id")) in ids)
+        not_yet = in_cart == 0 and bool(pack["items"])
+        checks.append({
+            "id": "weight", "title": "Вага кошика",
+            "ok": None if not_yet else not weight.get("blocked"),
+            "summary": (f"кошик {weight['cart_weight_kg']} кг"
+                        + (f" · {cap_text}" if cap_text else "")),
+            "detail": ("пак ще не в кошику — вага рахується по тому, що в ньому є"
+                       if not_yet else (weight.get("verdict") if weight.get("blocked") else None)),
+            "in_cart": in_cart,
+            "tools": ["silpo_get_shopping_cart_by_id", "silpo_get_time_slots"],
+        })
+    except SilpoError as exc:
+        checks.append({"id": "weight", "title": "Вага кошика", "ok": None,
+                       "summary": str(exc), "tools": ["silpo_get_shopping_cart_by_id"]})
+
+    # 3–4. Купон і промо — одним проходом по перках, звіреним із паком.
+    try:
+        offers = await optimize_pack(pack["id"])
+        coupons = offers.get("coupons") or []
+        dead = offers.get("coupons_ineligible") or []
+        if coupons:
+            c = coupons[0]
+            summary = (f"«{(c.get('text') or '')[:48]}» {c.get('reward') or ''} ляже на "
+                       f"{'замовлення' if c.get('order_wide') else 'кошик'} — canBeAppliedToOrder")
+            ok = True
+        elif dead:
+            c = dead[0]
+            summary = f"«{(c.get('text') or '')[:48]}» на цей кошик не ляже — canBeAppliedToOrder: false"
+            ok = False
+        else:
+            summary = "жоден із купонів не про цей кошик"
+            ok = None
+        fine = []
+        if coupons and coupons[0].get("delivery_only"):
+            fine.append("лише з доставкою, не самовивозом")
+        if coupons and coupons[0].get("warning"):
+            fine.append(str(coupons[0]["warning"]).lower())
+        if len(coupons) > 1:
+            fine.append(f"ще {len(coupons) - 1} підходить")
+        checks.append({
+            "id": "coupon", "title": "Купон", "ok": ok, "summary": summary,
+            "detail": " · ".join(fine) or None,
+            "coupons": coupons, "coupons_ineligible": dead,
+            "tools": ["silpo_get_my_coupons", "silpo_get_coupon_details"],
+        })
+        promos = offers.get("activate_promos") or []
+        fits = [p for p in promos if p.get("applies_to")]
+        limit = int((offers.get("promo_limit") or {}).get("maxSelect") or 5)
+        checks.append({
+            "id": "promo", "title": "Промо",
+            "ok": True if fits else None,
+            "summary": (f"обрано {len(fits)} із {limit}, що лягають на кошик"
+                        if fits else "жодне з персональних промо не про цей кошик"),
+            "detail": ("; ".join((p.get("text") or "")[:40] for p in fits[:2]) if fits else None),
+            "promos": fits, "promo_limit": offers.get("promo_limit"),
+            "tools": ["silpo_get_my_promos", "silpo_select_promos⁺"],
+        })
+    except SilpoError as exc:
+        checks.append({"id": "coupon", "title": "Купон", "ok": None, "summary": str(exc),
+                       "tools": ["silpo_get_my_coupons"]})
+        checks.append({"id": "promo", "title": "Промо", "ok": None, "summary": str(exc),
+                       "tools": ["silpo_get_my_promos"]})
+
+    failed = [c["title"].lower() for c in checks if c["ok"] is False]
+    verdict = ("Разом — без сюрпризів на касі." if not failed
+               else "Перед оформленням варто глянути: " + ", ".join(failed) + ".")
+    return {
+        "pack": {"id": pack["id"], "name": pack["name"], "total_uah": pack.get("total_uah"),
+                 "item_count": len(pack["items"])},
+        "checks": checks, "verdict": verdict, "all_clear": not failed,
+        "checkout_url": CHECKOUT_URL,
+        "note": ("Чотири перевірки — на тих самих tools, що вже є в MCP «Сільпо». "
+                 "Оформлення підтверджує людина."),
+    }
 
 
 async def swap_to(pack_id: str, product_id: str, new_product_id: str) -> dict:
@@ -1362,17 +1619,21 @@ def delivery_label(code: str) -> str:
     return DELIVERY_UA.get(code, code)
 
 
-async def cart_weight_check() -> dict:
+async def cart_weight_check(cart: dict | None = None) -> dict:
     """Чи влізе кошик у доставку за вагою.
 
     У слотах є `maxWeight` (40 кг для доставки додому), а в кошику —
     `calculation.delivery.totalWeight`. Ніхто їх не звіряє, і про перевищення
     гість дізнається від кур'єра. Це перевірка ДО оформлення.
+
+    Args:
+        cart: уже прочитаний кошик — щоб у зведеній перевірці не читати його вдруге.
     """
     ctx = await context.ensure()
-    detail = await silpo.call("silpo_get_shopping_cart_by_id",
-                              {"shoppingCartId": ctx["shoppingCartId"]})
-    cart = detail.get("cart") or detail
+    if cart is None:
+        detail = await silpo.call("silpo_get_shopping_cart_by_id",
+                                  {"shoppingCartId": ctx["shoppingCartId"]})
+        cart = detail.get("cart") or detail
     calc = cart.get("calculation") or {}
     weight = (calc.get("delivery") or {}).get("totalWeight") or 0
 
@@ -1701,52 +1962,431 @@ async def reminders(horizon_days: int = 5) -> dict:
 # ---------------------------------------------------------------------------
 # Вечеря на всю родину
 # ---------------------------------------------------------------------------
+# Що вважаємо білком «після залу»: трекер каже про тренування, а страва з
+# таким складником отримує перевагу. Список короткий і навмисно очевидний.
+_PROTEIN = ("куряче філе", "лосось", "стейк", "креветки", "яйця", "фарш", "індич", "тунець")
+# Те, що «до столу» береться зі смаків учасника, лише коли це напій: якщо Назар
+# любить піцу, а на вечерю паста, друга страва на столі — не «його своє».
+_DRINKS = ("кола", "сік", "вино", "пиво", "вода", "лимонад", "чай", "кава", "напій",
+           "квас", "морс", "смузі", "компот")
+
+
+def _promo_fits(promo: dict) -> bool:
+    """Чи промо стосується ТИПУ товару, а не випадкового слова в назві."""
+    stems = _stems(promo.get("text", ""))
+    for hit in promo.get("applies_to") or []:
+        first = ((hit.get("name") or "").split() or [""])[0].lower()[:3]
+        if len(first) >= 3 and any(stem.startswith(first) for stem in stems):
+            return True
+    return False
+
+
+def _stems_match(a: str, b: str) -> bool:
+    """«масло вершкове» ↔ «Масло вершкове 82%»: збіг за коренем першого слова."""
+    ra, rb = _stem((a or "").lower().split()[0]), _stem((b or "").lower().split()[0])
+    return bool(ra) and len(ra) >= 4 and (ra in rb or rb in ra)
+
+
 async def family_pack(theme: str = "вечеря", max_uah: float | None = None,
                       novelty: str = "any", prefer_promo: bool = False,
-                      avoid: list[str] | None = None) -> dict:
-    """Вечеря, у якій враховано смаки й обмеження КОЖНОГО в родині.
+                      avoid: list[str] | None = None,
+                      equipment: list[str] | None = None,
+                      dish: str | None = None) -> dict:
+    """Вечеря на всю родину: спершу СТРАВА, потім кошик під неї.
 
-    Склад родини — справжній, з `get_my_family`. Смаки й алергії учасників MCP
-    не віддає («Простір вподобань» є в застосунку, у API його немає), тож їх
-    тримає наш шар. Алергія будь-кого блокує товар для ВСЬОГО кошика: це не
-    вподобання, яке можна обійти, поклавши окрему тарілку.
+    «Збери вечерю» — це не список продуктів, а відповідь на «що готуємо».
+    Тому агент спочатку обирає страву, і обирає її з усіх персональних даних
+    одразу: алергії кожного відхиляють рецепти (з іменем того, чия алергія),
+    смаки родини й трекер ранжують решту, ваги з чеків тримають звичне вище.
+    Далі кошик: складники страви мінус те, що вже є вдома (комора), плюс
+    «до столу» — напій кожному, корм улюбленцю, підказки трекера. Наприкінці
+    знижки: купони й промо під цей кошик застосовуються самі, без кнопки.
+
+    Порядок джерел і є правилом. Алергія ВИКЛЮЧАЄ й не обходиться нічим:
+    трекер може радити горіхи після залу скільки завгодно — у кошик вони не
+    потраплять. Решта лише додає й ранжує.
+
+    Смаки учасників MCP «Сільпо» не віддає («Простір вподобань» живе в
+    застосунку, в API його немає), тож їх тримає наш шар — і саме цього ми
+    просимо в «Сільпо».
     """
-    from . import game, proposed
+    from . import game, proposed, weights as tastes
 
     prefs = await proposed.get_family_preferences()
     members = prefs.get("members") or []
     pets = prefs.get("pets") or []
+    people = max(1, len(members))
 
-    blocked, likes, because = [], [], []
+    # ── 1. Алергії: терміни й ЛЮДИ за ними ─────────────────────────────────
+    blocked: list[str] = []
+    who: dict[str, list[str]] = {}
+    owner: dict[str, set[str]] = {}
+    direct: dict[str, set[str]] = {}
+
+    def forbid(allergen: str, name: str) -> None:
+        blocked.append(allergen)
+        who.setdefault(allergen, []).append(name)
+        # «арахіс» розгортається й у «горіх» — це правильно для фільтра, але
+        # підпис «кедрові горіхи — Оля» збив би з пантелику: у Олі арахіс.
+        # Тому автором терміна вважаємо того, чий алерген він і є, а решту
+        # згадуємо лише коли прямого власника немає.
+        direct.setdefault(_stem(allergen.lower()), set()).add(name)
+        for term in expand_avoid([allergen]):
+            owner.setdefault(term, set()).add(name)
+
+    def whose(term: str) -> list[str]:
+        return sorted(direct.get(term) or owner.get(term) or ())
+
     for member in members:
         for allergen in member.get("allergies") or []:
-            blocked.append(allergen)
-            because.append(f"без «{allergen}», бо {member.get('name')}")
-        likes += (member.get("likes") or [])[:2]
+            forbid(allergen, member.get("name") or "хтось із рідних")
+    for allergen in avoid or []:
+        if allergen not in who:
+            forbid(allergen, "профіль гостя")
+    avoid_all = list(dict.fromkeys((avoid or []) + blocked))
+    considered = [{"term": term, "who": sorted(set(names))} for term, names in sorted(who.items())]
 
-    queries = list(dict.fromkeys(likes)) or ["паста", "сир твердий", "салат", "хліб"]
-    if theme and theme not in ("вечеря", ""):
-        queries = [theme] + queries
+    # ── 2. Контекст: трекери, ваги, комора ─────────────────────────────────
+    wellbeing = proposed.wellbeing_state().get("wellbeing") or {}
+    hints = proposed.wellbeing_hints(wellbeing)
+    snapshot = tastes.snapshot(limit=20)
+    pantry = proposed.pantry_state()
+    at_home = [row for row in pantry.get("items") or [] if not row.get("expired")]
+    spoiled = [row for row in pantry.get("items") or [] if row.get("expired")]
+
+    # ── 3. Страва ──────────────────────────────────────────────────────────
+    found = proposed.find_recipes(meal="вечеря", equipment=equipment, avoid=avoid_all, limit=20)
+    rejected = []
+    for row in found.get("rejected") or []:
+        names = whose(row.get("term")) if row.get("reason") == "алергія" else []
+        rejected.append({**row, "who": names,
+                         "said": (f'{row["title"]} — {row.get("item")}: '
+                                  + (", ".join(names) or "алергія") if row.get("reason") == "алергія"
+                                  else f'{row["title"]} — {row.get("detail")}')})
+
+    def score(recipe: dict) -> tuple[float, list[str]]:
+        points, notes = 0.0, []
+        text = " ".join([recipe["title"], *recipe["items"]]).lower()
+        for member in members:
+            hits = [like for like in member.get("likes") or [] if _stem(like.lower()) in text]
+            if hits:
+                points += 2 * len(hits)
+                notes.append(f'{member.get("name")} любить {", ".join(hits)}')
+        if wellbeing.get("workout") and any(p in text for p in _PROTEIN):
+            points += 1.5
+            notes.append(f'трекер: тренування ({wellbeing["workout"]}) — страва з білком')
+        taste = sum(max(0.0, tastes.weight_of(i)) for i in recipe["items"])
+        if taste >= 3:
+            points += min(1.0, taste / 10)
+            notes.append(f"звичне з чеків: вага складників +{round(taste, 1)}")
+        if recipe.get("serves", 2) >= people:
+            points += 0.5
+        return points, notes
+
+    ranked = sorted(((score(r), r) for r in found.get("recipes") or []),
+                    key=lambda pair: -pair[0][0])
+    if not ranked:
+        raise SilpoError("Під алергії й техніку родини не знайшлось жодної вечері — "
+                         "спробуй позначити більше техніки в профілі.")
+    # `dish` — гість натиснув «або: Курка з овочами». Вибір із того самого
+    # відібраного списку: страва з алергеном не стане доступною і за проханням.
+    pick = next((pair for pair in ranked
+                 if dish and pair[1]["title"].lower() == dish.strip().lower()), ranked[0])
+    (best_points, best_notes), dish = pick
+    alternatives = [{"title": r["title"], "why": notes[:2], "points": pts}
+                    for (pts, notes), r in ranked if r is not dish][:2]
+    scale = 1 if dish.get("serves", 2) >= people else -(-people // max(1, dish.get("serves", 2)))
+
+    # ── 4. Черга запитів ───────────────────────────────────────────────────
+    queries: list[str] = []
+    reasons: dict[str, dict] = {}
+    skipped_home: list[dict] = []
+
+    def want(query: str, source: str, why: str) -> bool:
+        query = (query or "").strip().lower()
+        if not query or query in reasons:
+            return False
+        queries.append(query)
+        reasons[query] = {"source": source, "why": why}
+        return True
+
+    for item in dish["items"]:
+        home = next((row for row in at_home if _stems_match(item, row.get("name", ""))), None)
+        if home:
+            skipped_home.append({"query": item, "have": home.get("name"),
+                                 "expires": home.get("expires")})
+            continue
+        want(item, "dish", f'для страви «{dish["title"]}»')
     for pet in pets:
-        queries.append(f"корм для {'котів' if 'cat' in str(pet.get('kind','')).lower() else 'собак'}")
-        because.append(f"корм, бо в родині {pet.get('name')}")
-    for child in prefs.get("children") or []:
-        age = child.get("age")
-        if age is not None and age < 12:
-            queries.append("сік дитячий")
-            because.append(f"дитяче, бо {child.get('name')} {age} р.")
+        kind = "котів" if "cat" in str(pet.get("slug") or pet.get("kind") or "").lower() else "собак"
+        want(f"корм для {kind}", "family", f"у родині {pet.get('name')}")
+    covered = " ".join(dish["items"] + [dish["title"]]).lower()
+    for member in members:
+        likes = member.get("likes") or []
+        if any(_stem(like.lower()) in covered for like in likes):
+            continue    # страва вже його — окремого «свого» до столу не треба
+        drink = next((like for like in likes if any(d in like.lower() for d in _DRINKS)), None)
+        if drink:
+            want(drink, "family", f"{member.get('name')} це любить")
+    # З трекера — по кілька підказок на сигнал, не всі підряд: білок уже в
+    # страві, а «чай» від настрою поруч із кавою від недосипу — це два чайники.
+    per_signal: dict[str, int] = {}
+    for hint in hints:
+        if any(p in hint["query"] for p in _PROTEIN) or per_signal.get(hint["why"], 0) >= 3:
+            continue
+        if sum(per_signal.values()) >= 4:
+            break
+        if want(hint["query"], "tracker", f"трекер · {hint['why']}"):
+            per_signal[hint["why"]] = per_signal.get(hint["why"], 0) + 1
 
-    pack = await build_pack(f"Родинна {theme}", queries[:MAX_BATCH], max_uah=max_uah,
+    pack = await build_pack(f'Вечеря: {dish["title"]}', queries[:MAX_BATCH], max_uah=max_uah,
+                            avoid=avoid_all, prefer_promo=prefer_promo, novelty=novelty)
+
+    # ── 5. Підписи на рядках ───────────────────────────────────────────────
+    for row in pack.get("excluded") or []:
+        row["who"] = ", ".join(whose(row["term"])) or None
+    used = {"dish": 0, "family": 0, "tracker": 0}
+    extras: dict[str, list[str]] = {"family": [], "tracker": []}
+    lifted: list[str] = []
+    for item in pack["items"]:
+        row = reasons.get(item.get("query")) or {"source": "dish", "why": "до вечері"}
+        item["because"] = row["why"]
+        used[row["source"]] = used.get(row["source"], 0) + 1
+        if row["source"] in extras:
+            # Якщо запитане зняла алергія і в кошик лягло сусіднє — у підсумку
+            # має стояти те, що ЛЯГЛО: «кунжут замість горіхів», а не «горіхи».
+            swapped = [d for d in pack.get("excluded") or [] if d["query"] == item.get("query")]
+            extras[row["source"]].append(
+                f'{_short_query(item.get("name", ""), 2).lower()} замість «{item.get("query")}»'
+                if swapped else (item.get("query") or ""))
+        if row["source"] == "dish" and scale > 1 and not item.get("weighted"):
+            item["qty"] = (item.get("qty") or 1) * scale
+            item["scaled"] = f'× {scale} — рецепт на {dish.get("serves")}, вас {people}'
+        weight = tastes.own_weight_of(item.get("name", ""))
+        if weight >= 2:
+            item["because"] += f" · береш регулярно (вага +{round(weight, 1)})"
+            lifted.append(item.get("query") or _short_query(item.get("name", ""), 2))
+        cut = [d for d in pack.get("excluded") or [] if d["query"] == item.get("query")]
+        if cut:
+            names = ", ".join(sorted({n for d in cut for n in whose(d["term"])}))
+            item["note"] = (f'з «{item.get("query")}» {len(cut)} поз. зняла алергія'
+                            + (f" — {names}" if names else ""))
+    for row in pack.get("skipped") or []:
+        if (row.get("reason") or "").startswith("пропущено через"):
+            names = sorted({n for d in pack.get("excluded") or []
+                            if d["query"] == row["query"] for n in whose(d["term"])})
+            if names:
+                row["because"] = "алергія: " + ", ".join(names)
+                row["reason"] = "зняла алергія — " + ", ".join(names)
+    pack["skipped"] = (pack.get("skipped") or []) + [
+        {"query": h["query"], "reason": f'є вдома: {h["have"]}', "home": True} for h in skipped_home]
+    if scale > 1:
+        packs.set_items(pack["id"], pack["items"])
+
+    # ── 6. Знижки — самі, без кнопки ───────────────────────────────────────
+    offers = await optimize_pack(pack["id"])
+    # Обираємо самі лише промо, які справді лягають на пак. Збіг за одним
+    # коренем («мелен» у «каву мелену» й «часник мелений») — це не збіг.
+    promo_ids = [p["id"] for p in offers.get("activate_promos") or [] if _promo_fits(p)]
+    for promo in offers.get("activate_promos") or []:
+        promo["selected"] = promo["id"] in promo_ids
+    if promo_ids:
+        offers["selected"] = await proposed.select_promos(promo_ids, offers.get("promo_limit"))
+    pack["offers"] = offers
+
+    # ── 7. Вихід ───────────────────────────────────────────────────────────
+    pack["dish"] = {**{k: dish.get(k) for k in ("id", "title", "minutes", "serves", "steps",
+                                                  "equipment", "items")},
+                    "why": best_notes, "for_people": people, "scale": scale}
+    pack["dishes_rejected"] = rejected
+    pack["dishes_other"] = alternatives
+    pack["family"] = {"members": members, "pets": pets}
+    pack["blocked_for_everyone"] = sorted(set(blocked))
+    pack["considered_allergies"] = considered
+    pack["blocked_by"] = considered
+    pack["because"] = [f'без «{c["term"]}», бо {", ".join(c["who"])}' for c in considered]
+
+    cut_total = len(pack.get("excluded") or [])
+    label = {q: r["why"].replace(" це любить", "").replace("у родині ", "")
+             for q, r in reasons.items()}
+    family_extras = [f'{q} — {label[q]}' for q in extras["family"]]
+    tracker_extras = [q for q in extras["tracker"]]
+    tracker_cut = [f'{row["query"]} — {row["reason"]}' for row in pack.get("skipped") or []
+                   if reasons.get(row["query"], {}).get("source") == "tracker"
+                   and (row.get("reason") or "").startswith("зняла алергія")]
+    promo_line = []
+    if offers.get("coupons"):
+        promo_line.append(f'{len(offers["coupons"])} купон(и) спрацюють на касі')
+    if promo_ids:
+        promo_line.append(f'промо обрано {len(promo_ids)} із ліміту '
+                          f'{offers.get("promo_limit", {}).get("maxSelect") or 5}')
+    if offers.get("multibuy"):
+        promo_line.append(f'мультипак −{offers.get("multibuy_saving_uah")} ₴')
+    # `short` — рядок у стовпчик під кошиком; `did` — повне пояснення для
+    # панелі «Що відбувається» й моделі.
+    short_tracker = " · ".join(part for part in (
+        f'{wellbeing["workout"]}' if wellbeing.get("workout") else None,
+        f'сон {str(wellbeing["sleep_hours"]).replace(".", ",")} год'
+        if wellbeing.get("sleep_hours") else None) if part)
+    short_promo = " · ".join(part for part in (
+        f'{len(offers["coupons"])} купон' if offers.get("coupons") else None,
+        f'{len(promo_ids)} промо' if promo_ids else None) if part)
+    pack["sources"] = [
+        {"id": "family", "title": "Сімейна група",
+         "short": ", ".join([m.get("name") or "?" for m in members] + [p.get("name") or p.get("kind") or "?" for p in pets]),
+         "tool": "silpo_get_my_family + silpo_get_family_preferences",
+         "did": (", ".join(f'{m.get("name")}' + (f' ({m["age"]} р.)' if m.get("age") else "")
+                           for m in members)
+                 + (", " + ", ".join(f'{p.get("kind")} {p.get("name")}' for p in pets) if pets else "")
+                 + f'. Страва — бо {best_notes[0] if best_notes else "підходить усім"}'
+                 + (f'. До столу: {"; ".join(family_extras)}' if family_extras else ""))},
+        {"id": "allergy", "title": "Алергії",
+         "short": (", ".join(f'{c["term"]} ({", ".join(c["who"])})' for c in considered)
+                   if considered else "не вказано"),
+         "tool": "silpo_get_family_preferences + silpo_find_recipes",
+         "did": ("враховано: " + "; ".join(f'{c["term"]} — {", ".join(c["who"])}' for c in considered)
+                 + (". Відхилено страви: " + ", ".join(
+                        r["title"] for r in rejected if r.get("reason") == "алергія")
+                    if any(r.get("reason") == "алергія" for r in rejected) else "")
+                 + (f'. На підборі знято товарів: {cut_total}' if cut_total else ""))
+                if considered else "ніхто не вказав обмежень"},
+        {"id": "tracker", "title": "Трекери", "short": short_tracker or "не підключені",
+         "tool": "silpo_wellbeing_state",
+         "did": (", ".join(part for part in (
+                     wellbeing.get("source"),
+                     f'тренування: {wellbeing["workout"]}' if wellbeing.get("workout") else None,
+                     f'сон {wellbeing["sleep_hours"]} год' if wellbeing.get("sleep_hours") else None,
+                 ) if part)
+                 + (" → страва з білком" if any("білком" in n for n in best_notes) else "")
+                 + (f'; до столу: {", ".join(tracker_extras)}' if tracker_extras else "")
+                 + (f'; просив {"; ".join(tracker_cut)}' if tracker_cut else ""))
+                or "трекери не підключені"},
+        {"id": "taste", "title": "Ваги смаку", "short": f'{snapshot["tracked_products"]} товарів із чеків',
+         "tool": "silpo_get_taste_weights",
+         "did": f'{snapshot["tracked_products"]} товарів із чеків і свайпів'
+                + (f'; підняли: {", ".join(lifted[:3])}' if lifted else "; у цьому паку нічого не змінили")},
+        {"id": "pantry", "title": "Комора",
+         "short": (f'вдома є {", ".join(h["have"].lower() for h in skipped_home[:2])}' if skipped_home
+                   else "вдома нічого зі страви"),
+         "tool": "silpo_pantry_state",
+         "did": ((f'вдома є {", ".join(h["have"] for h in skipped_home)} — не купуємо'
+                  if skipped_home else "зі складників страви вдома немає нічого")
+                 + (f'; прострочено: {", ".join(r.get("name", "") for r in spoiled)}' if spoiled else ""))},
+        {"id": "promo", "title": "Знижки", "short": short_promo or "нічого не лягло",
+         "tool": "silpo_get_my_coupons + silpo_get_my_promos + silpo_select_promos",
+         "did": "; ".join(promo_line) or "під цей кошик купонів і промо немає"},
+    ]
+    pack["why"] = ("Страва обрана з усіх персональних даних одразу, кошик — під неї. "
+                   "Алергія будь-кого виключає і рецепт, і товар для ВСЬОГО столу.")
+    game.mark("family_pack")
+    return pack
+
+
+# ---------------------------------------------------------------------------
+# Компанія: спільна закупівля кількох людей під одну подію
+# ---------------------------------------------------------------------------
+async def crew_pack(crew_id: str | None = None, max_uah: float | None = None,
+                    novelty: str = "any", prefer_promo: bool = False,
+                    avoid: list[str] | None = None, crew_title: str | None = None) -> dict:
+    """Кошик компанії: пропозиції всіх учасників, обмеження всіх учасників.
+
+    Args:
+        crew_id: яка компанія; без id — за назвою `crew_title`, а без обох —
+            остання створена. У чаті кажуть «в компанію «Пікнік»», не id.
+
+    Відрізняється від `family_pack` двома речами. По-перше, склад тут разовий і
+    не привʼязаний до акаунтів — зібрались на пікнік і розійшлись. По-друге,
+    список формує не організатор: кожна позиція приходить від конкретної людини
+    і так і підписана. Кошик, зібраний однією людиною за всіх, завжди когось
+    забуває.
+
+    Алергія будь-кого блокує товар для ВСЬОГО кошика: на пікніку немає окремої
+    тарілки, а є один мангал і один стіл.
+    """
+    from . import game, proposed
+
+    if not crew_id and crew_title:
+        crew_id = proposed.find_crew_id(crew_title)
+        if not crew_id:
+            raise SilpoError(f"Компанії «{crew_title}» немає — є лише ті, що в профілі.")
+    crew_info = proposed.get_crew(crew_id)
+    crew = crew_info.get("crew")
+    if not crew:
+        raise SilpoError("Компанії ще немає — створи її й поклич людей.")
+
+    people = max(1, len(crew.get("members") or []) or int(crew.get("people") or 4))
+    # Алергія й дієта — різні речі, і плутати їх нечесно. Алергія блокує товар
+    # для ВСІХ: спільний мангал, спільна дошка, кросконтамінація. Дієта нікого
+    # ні до чого не зобовʼязує — вегетаріанець не робить вечерю вегетаріанською
+    # для шістьох. Тому дієти ми показуємо, але у фільтр не ставимо.
+    blocked = [a["term"] for a in crew_info.get("allergies") or []]
+    because = [f'виключено «{a["term"]}» для всіх, бо {a["who"]}'
+               for a in crew_info.get("allergies") or []]
+    diet_notes = [f'{d["who"]} — {d["term"]}: врахувати окремою позицією'
+                  for d in crew_info.get("diets") or []]
+
+    # Хто що запропонував. Порядок «по колу», а не «спершу весь список
+    # організатора»: інакше на бюджеті першими відсікаються ті, хто мовчазніший.
+    wishes = crew_info.get("wishes") or []
+    by_person: dict[str, list[str]] = {}
+    for w in wishes:
+        by_person.setdefault(w["who"], []).append(w["item"])
+    queries, owner = [], {}
+    while any(by_person.values()):
+        for name, items in by_person.items():
+            if items:
+                item = items.pop(0)
+                queries.append(item)
+                owner[item.lower()] = name
+    if not queries:
+        raise SilpoError("Ніхто ще нічого не запропонував — список компанії порожній.")
+
+    pack = await build_pack(crew["title"], queries[:MAX_BATCH], max_uah=max_uah,
                             avoid=(avoid or []) + blocked, prefer_promo=prefer_promo,
                             novelty=novelty)
-    pack["family"] = {"members": members, "pets": pets,
-                      "children": prefs.get("children") or []}
+
+    # Кількості на компанію. Те, що не ділиться (вугілля, запальничка), лишається
+    # одним — та сама логіка, що в «Шашлику на шістьох».
+    once = ("вугілля", "запальнич", "мангал", "решітк", "пакет", "серветк", "фольг")
+    for item in pack["items"]:
+        query = (item.get("query") or "").lower()
+        item["from_member"] = owner.get(query)
+        if item["from_member"]:
+            item["because"] = f'запропонував(ла) {item["from_member"]}'
+        if any(word in query for word in once):
+            item["qty"] = 1
+            item["scaled"] = "одна на компанію"
+        elif item.get("weighted"):
+            item["qty"] = round(max(0.25 * people, 0.5), 1)
+            item["scaled"] = f"×{item['qty']} кг на {people} осіб"
+        else:
+            item["qty"] = max(1, round(people / 2))
+            item["scaled"] = f"×{item['qty']} на {people} осіб"
+
+    skipped = pack.get("skipped") or []
+    packs.set_items(pack["id"], pack["items"])
+    pack = packs.get(pack["id"])
+    pack["skipped"] = skipped
+    pack["crew"] = {"id": crew["id"], "title": crew["title"],
+                    "occasion": crew.get("occasion"),
+                    "members": crew.get("members") or []}
+    pack["people"] = people
     pack["because"] = because
     pack["blocked_for_everyone"] = sorted(set(blocked))
-    pack["why"] = ("Алергія будь-кого з рідних виключає товар для всього кошика. "
-                   "Вподобання окремих учасників MCP не віддає — тримаємо в себе, "
-                   "і саме цього просимо в «Сільпо».")
-    game.mark("family_pack")
+    # Та сама розмітка «Враховано алергії: горіхи (Марина)», що й у родини.
+    by_term: dict[str, list[str]] = {}
+    for a in crew_info.get("allergies") or []:
+        by_term.setdefault(a["term"], []).append(a["who"])
+    pack["considered_allergies"] = [{"term": t, "who": who} for t, who in by_term.items()]
+    pack["diets"] = [d["term"] for d in crew_info.get("diets") or []]
+    pack["diet_notes"] = diet_notes
+    pack["proposed"] = True
+    pack["simulated"] = bool(crew.get("demo"))
+    pack["why"] = (f"Список зібрали {len(by_person)} людей, а не одна. Алергія "
+                   "будь-кого виключає товар для всього кошика. Компанія — "
+                   "новий концепт: у «Сільпо» такого немає ні в застосунку, "
+                   "ні в MCP, тож учасники й пропозиції живуть у нас.")
+    game.mark("crew_pack")
     return pack
 
 

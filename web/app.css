@@ -4,6 +4,10 @@
   --blue:#2B5CE6; --blue-soft:#EAF0FE;
   --red:#E4002B; --green:#12805A; --amber:#B45309;
   --r:18px;
+  /* Рамка телефона в мобільному вигляді. Правиться з інтерфейсу
+     (шапка → «Мобільний» → розмір), значення лягає в localStorage.
+     Ширина з урахуванням рамки: box-sizing усюди border-box. */
+  --phone-w:424px; --phone-h:min(80vh,780px); --phone-h-min:560px;
 }
 *{box-sizing:border-box}
 body{margin:0; background:var(--bg); color:var(--ink); font-size:14.5px; line-height:1.45;
@@ -127,6 +131,13 @@ a{color:var(--blue)}
 input{width:100%; font:14.5px/1.3 inherit; font-family:inherit; color:var(--ink);
   background:var(--tint); border:1px solid var(--line); border-radius:12px; padding:11px 13px}
 input::placeholder{color:var(--soft)}
+/* select — як поле вводу, зі своєю стрілкою; рідний вигляд системи тут чужий */
+select{width:100%;font-size:14.5px;line-height:1.3;font-family:inherit;color:var(--ink);
+  background:var(--tint) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center;
+  border:1px solid var(--line);border-radius:12px;padding:11px 38px 11px 13px;
+  appearance:none;-webkit-appearance:none;cursor:pointer}
+select:focus{outline:none;border-color:var(--blue)}
+.filters select{flex:1;min-width:150px}
 .chips{display:flex; gap:7px; flex-wrap:wrap}
 .tag{background:var(--tint); border:1px solid var(--line); border-radius:999px;
   padding:5px 11px; font-size:12.5px}
@@ -214,7 +225,9 @@ body.mobile .desktop-only{display:none !important}
   font:700 12.5px/1 inherit;font-family:inherit;cursor:pointer;white-space:nowrap}
 .scn .run:hover{filter:brightness(1.07)}
 .scn .run.sec{background:var(--tint);color:var(--ink);border:1px solid var(--line)}
-.scn .tools{display:flex;flex-wrap:wrap;gap:4px}
+.scn .tools{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.scn .tarr{font-style:normal;font-size:11px;color:var(--soft);line-height:1}
+.tchip{transition:background .25s,color .25s,border-color .25s}
 .tchip{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;padding:2px 7px;
   border-radius:6px;background:var(--tint);color:var(--muted);border:1px solid var(--line)}
 .tchip.prop{background:#F3ECFD;border-color:#DFCEFA;color:#6B34C9}
@@ -292,10 +305,14 @@ code.cmd{display:block;background:var(--tint);border:1px solid var(--line);borde
 .appframe{background:var(--card);border-radius:20px;overflow:hidden;
   border:1px solid var(--line);display:flex;flex-direction:column}
 body.mobile .appframe{border:10px solid #1B2233;border-radius:34px;
-  box-shadow:0 20px 50px rgba(15,23,41,.28);height:78vh;min-height:560px}
+  box-shadow:0 20px 50px rgba(15,23,41,.28);
+  height:var(--phone-h);min-height:var(--phone-h-min)}
 .appbar{display:flex;align-items:center;gap:10px;padding:13px 15px;
   border-bottom:1px solid var(--line);background:var(--card)}
 .appbar .ttl{flex:1;font-weight:700;font-size:17px;letter-spacing:-.01em}
+/* Справжній Машрум із сайту AI Factory — той самий PNG, що в пітчі. */
+.appbar .mush{width:34px;height:34px;border-radius:50%;flex:0 0 auto;object-fit:cover;
+  background:radial-gradient(circle at 50% 60%,#E9F7B0,#F6F0FF 72%)}
 .appbar .ico{width:30px;height:30px;border-radius:50%;border:0;background:var(--tint);
   cursor:pointer;font-size:14px;color:var(--muted)}
 .apptabs{display:flex;gap:4px;padding:8px 12px;background:var(--card);
@@ -341,7 +358,7 @@ body.mobile .appframe{border:10px solid #1B2233;border-radius:34px;
 .crow .off{background:#FF8A34;color:#fff;border-radius:5px;padding:1px 6px;
   font-size:11.5px;font-weight:700}
 .crow .now{font-size:19px;font-weight:800;letter-spacing:-.02em;width:100%}
-.crow .side{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.crow .cside{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
 .stepper{display:flex;align-items:center;background:var(--blue);border-radius:11px;
   color:#fff;font-weight:700;font-size:13.5px;overflow:hidden}
 .stepper button{border:0;background:none;color:#fff;font-size:17px;cursor:pointer;
@@ -452,6 +469,48 @@ body.mobile .appframe{border:10px solid #1B2233;border-radius:34px;
 
 /* пояснення, чому позиція в паку: без них автоматичному кошику не довіряють */
 .prod .why.because{color:var(--blue)}
+
+/* Джерела підбору: чотири рядки над паком, кожен зі своїм внеском. Показуємо
+   не «агент урахував ваші дані», а скільки саме позицій дало кожне джерело —
+   і скільки зняло. Порожній внесок теж видно: джерело, яке нічого не дало,
+   не має виглядати так, ніби воно працювало. */
+.srcs{margin-top:12px; border-top:1px solid var(--line)}
+.src{display:grid; grid-template-columns:auto auto 1fr; gap:2px 8px; align-items:baseline;
+  padding:7px 0; border-bottom:1px solid var(--line)}
+.src b{font-size:13px; font-weight:700}
+.src .n{font-size:12px; font-weight:700; color:var(--blue); white-space:nowrap}
+/* Джерело, яке лише виключає, не має виглядати як внесок. */
+.src .n.cut{color:var(--red)}
+
+/* Страва над кошиком */
+.dish{margin:12px 0 4px; padding:12px 14px; border-radius:14px; background:#F0FDF4;
+  border:1px solid #BBF7D0}
+.dish .dt{display:flex; justify-content:space-between; align-items:baseline; gap:10px}
+.dish .dt b{font-size:15px; font-weight:800}
+.dish .dwhy{margin:6px 0 0; padding-left:18px; font-size:12.5px; color:var(--muted); line-height:1.45}
+.dish .drej{margin-top:7px; font-size:12.5px; color:var(--red); line-height:1.4}
+.dish .drej b{font-weight:700}
+.dish .dalt{margin-top:6px; font-size:12.5px; color:var(--muted)}
+.dish .dalt .link{font-size:12.5px; padding:0}
+
+/* Правка родини перед вечерею */
+.fedit{display:grid; gap:6px; padding:8px 0}
+.fedit input{width:100%; box-sizing:border-box; border:1px solid var(--line); border-radius:9px;
+  padding:7px 9px; font:inherit; font-size:13px}
+
+/* Обране промо: галочка замість плюса */
+.ticket.on .end{background:var(--green); color:#fff; font-weight:800}
+
+/* «Чому так» під паком: один рядок, решта — за кліком. */
+.packwhy{margin-top:8px}
+.packwhy summary{cursor:pointer; font-size:12px; font-weight:600; color:var(--muted);
+  list-style:none; display:flex; align-items:center; gap:6px}
+.packwhy summary::-webkit-details-marker{display:none}
+.packwhy summary::before{content:'▸'; font-size:11px}
+.packwhy[open] summary::before{content:'▾'}
+.packwhy .soft{margin-top:8px}
+.src .d{grid-column:1/-1; font-size:11.5px; color:var(--muted); line-height:1.4}
+.src code{grid-column:1/-1; font-size:10.5px; color:var(--soft); word-break:break-word}
 
 /* =========================================================================
    Переробка макета: сайдбари, модалки, roadmap, нижня навігація
@@ -637,17 +696,19 @@ dialog.sheet .sbody{padding:16px 18px 20px;overflow-y:auto;max-height:calc(86vh 
 
 /* --- каркас головного екрана --- */
 .appframe.chat{height:calc(100vh - 108px);min-height:520px}
-body.mobile .appframe.chat{height:min(80vh,780px)}
+body.mobile .appframe.chat{height:var(--phone-h)}
 .appbar .iconbtn{margin-left:0}
 .appbar .ttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:820px){ .appwrap{max-width:100%} }
 
 /* --- мобільний фрейм на КОЖНІЙ сторінці, не лише на головній --- */
 body.mobile .main{padding:14px 0 24px;display:flex;justify-content:center}
-body.mobile .appwrap{max-width:424px;width:424px}
-body.mobile .appframe{height:min(80vh,780px)}
-.appframe{background:var(--card);border-radius:20px;overflow:hidden;
-  border:1px solid var(--line);display:flex;flex-direction:column}
+body.mobile .appwrap{max-width:var(--phone-w);width:var(--phone-w)}
+/* Висота рамки живе одним правилом вище (`body.mobile .appframe`), а не
+   повторюється тут: два однакові селектори з різними значеннями раніше
+   робили `height:78vh` мертвим кодом, і зрозуміти це можна було лише
+   в інспекторі. Дубль `.appframe{}` теж прибрано — він слово в слово
+   повторював оголошення на початку файла. */
 .appwrap{max-width:1180px;margin:0 auto;width:100%}
 .pagebody{flex:1;overflow-y:auto;padding:16px 18px 26px;background:var(--bg)}
 body.mobile .pagebody{padding:14px 15px 22px}
@@ -655,7 +716,13 @@ body.mobile .pagebody{padding:14px 15px 22px}
 body:not(.mobile) .appframe.flat{border:0;background:transparent;border-radius:0;height:auto}
 body:not(.mobile) .appframe.flat .pagebody{padding:0;background:transparent;overflow:visible}
 body:not(.mobile) .appframe.flat .appnav{display:none}
-body:not(.mobile) .appframe.flat .appbar{display:none}
+/* Раніше тут ховався й .appbar — разом із нижньою навігацією. На десктопі це
+   лишало профіль і грибницю ЗОВСІМ без виходу: єдиним посиланням на головну
+   був заголовок сайту, який читається як логотип, а не як «назад». Тепер
+   смуга лишається, але без телефонного вигляду: без підкладки й межі. */
+body:not(.mobile) .appframe.flat .appbar{background:transparent;border-bottom:0;
+  padding:0 0 14px}
+body:not(.mobile) .appframe.flat .appbar .ttl{font-size:22px}
 
 /* значок рівня в портреті — вхід у грибницю іконкою, а не рядком */
 .lvlbadge{display:flex;align-items:center;gap:7px;text-decoration:none;flex:0 0 auto;
@@ -682,7 +749,7 @@ body:not(.mobile) .appframe.flat .appbar{display:none}
 
 /* --- сторінка шляху: власний скрол --- */
 .appframe.road{height:calc(100vh - 108px);min-height:520px}
-body.mobile .appframe.road{height:min(80vh,780px)}
+body.mobile .appframe.road{height:var(--phone-h)}
 .roadscroll{overflow-y:auto;position:relative}
 .road .lvlrow:first-child:before{top:50%}
 .road .lvlrow:last-child:before{bottom:50%}
@@ -735,3 +802,339 @@ body.mobile .shell > .side.l,body.mobile .shell > .side.r{display:flex}
    фраза між змінами стоїть на місці. */
 .msg.thinking{color:var(--muted);animation:think 1.4s ease-in-out infinite}
 @keyframes think{0%,100%{opacity:.55}50%{opacity:1}}
+
+/* позначка нового сценарію в панелі — щоб свіжу картку було видно одразу */
+.scn .isnew{margin-left:7px;padding:2px 7px;border-radius:999px;font-size:10.5px;
+  font-weight:700;letter-spacing:.02em;text-transform:uppercase;vertical-align:1px;
+  background:#EEF2FF;color:#4338CA;border:1px solid #C7D2FE}
+
+/* вердикт-екран у стрічці чату — той самий кадр, що й пак */
+.panelmsg{background:var(--card);border:1px solid var(--line);border-radius:16px;
+  border-bottom-left-radius:6px;padding:14px 16px;margin:2px 0 10px}
+.panelmsg h2{font-size:17px;margin:0 0 8px}
+.panelmsg .habit:last-of-type{margin-bottom:2px}
+
+/* компанія як обʼєкт у списку профілю */
+.crewrow{display:flex;flex-direction:column;gap:3px;align-items:flex-start;width:100%;
+  text-align:left;background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:11px 13px;margin-bottom:8px;cursor:pointer;font:inherit;color:inherit}
+.crewrow:hover{border-color:var(--blue)}
+.crewrow b{font-size:14.5px}
+.crewrow .soft{font-size:12px}
+
+/* поля трекера: що саме агент читає, і чи є там зараз значення */
+.fields{margin:-2px 0 12px 44px;display:flex;flex-direction:column;gap:1px}
+.fld{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:6px 0;
+  border-top:1px dashed var(--line)}
+.fld .k{font-size:12.5px;color:var(--muted)}
+.fld .v{font-size:12.5px;color:var(--soft);text-align:right}
+.fld.on .v{color:var(--ink);font-weight:600}
+.fld .u{grid-column:1/-1;font-size:10.5px;color:var(--soft);
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.fld.idle .k,.fld.idle .v{opacity:.55}
+.fld.idle .u b{color:var(--amber);font-weight:600}
+
+/* пресети розміру телефона */
+.phones{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:4px}
+.phones .ph{display:flex;flex-direction:column;gap:2px;align-items:flex-start;
+  background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:9px 11px;cursor:pointer;font:inherit;color:inherit;text-align:left}
+.phones .ph:hover{border-color:var(--blue)}
+.phones .ph.on{border-color:var(--blue);background:var(--blue-soft)}
+.phones .ph b{font-size:13.5px}
+.phones .ph span{font-size:11.5px;color:var(--soft);font-variant-numeric:tabular-nums}
+
+/* ===================== головний екран: три колонки =====================
+   Клієнтська частина завжди в рамці телефона, тож `body.mobile` стоїть
+   постійно — а разом із ним і правила, що робили бічні панелі накладками.
+   Для головного екрана (`.shell.live`) їх треба перебити: тут це справжні
+   колонки сітки. Панель сценаріїв нічого не затінює й не перехоплює кліки —
+   запустив сценарій і одразу бачиш, як він іде. */
+:root{--live:392px}
+
+body.mobile .shell.live{grid-template-columns:var(--side) minmax(0,1fr) var(--live)}
+body.mobile .shell.live:not(.l){grid-template-columns:0 minmax(0,1fr) var(--live)}
+body.mobile .shell.live > .side{position:sticky;top:58px;transform:none;
+  height:calc(100vh - 58px);width:auto;z-index:auto;left:auto;right:auto}
+body.mobile .shell.live > .side.r{display:flex}
+body.mobile .shell.live:not(.l) > .side.l{display:none}
+body.mobile .shell.live.l > .side.l{display:flex}
+body.mobile .shell.live .main{grid-column:2}
+/* Затемнення на головному екрані не зʼявляється ніколи. */
+body.mobile .shell.live ~ .scrim{display:none}
+
+/* --- стрічка «що відбувається» --- */
+.side.r .dbody.live{padding:10px 12px 24px;display:flex;flex-direction:column;gap:6px}
+.lrow{border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:12px;
+  padding:8px 11px;background:var(--card);box-shadow:0 1px 2px rgba(15,23,41,.05)}
+.lrow .h{display:flex;align-items:baseline;gap:8px}
+.lrow .n{font-weight:700;font-size:12.5px;line-height:1.3;flex:1;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lrow .n i{font-style:normal;color:#7C3AED}
+.lrow .ms{font-size:11px;color:var(--soft);font-variant-numeric:tabular-nums}
+.lrow .io{font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:4px;
+  word-break:break-word;max-height:52px;overflow:hidden}
+.lrow .io.in{color:var(--blue)}
+.lrow .io.out{color:var(--muted)}
+.lrow .io.note{color:var(--soft);font-family:inherit;font-size:11.5px}
+.lrow.prop{border-color:#DDD6FE;border-left-color:#7C3AED;background:#FBFAFF}
+.lrow.bad{border-color:#FECDD3;background:#FFF1F2}
+.lrow.step{border-style:dashed;border-left-width:1px;border-left-color:var(--line);background:transparent;box-shadow:none}
+.lrow.step .n{font-family:inherit;font-weight:600;color:var(--muted);white-space:normal}
+.lrow.llm{border-color:#BFDBFE;border-left-color:#60A5FA;background:#F5F9FF}
+.lrow.llm .n{font-family:inherit;white-space:normal;color:var(--blue)}
+
+/* --- кошик як сторінка застосунку --- */
+.cartpage{display:flex;flex-direction:column}
+.cartpage .dhead{border:0;display:flex;align-items:center;gap:10px}
+.cartpage .dhead h2{margin:0}
+
+/* Шапка пака всередині телефона: кнопки під заголовком, а не поруч. У рамці
+   424 px два блоки в рядок стискали назву в стовпчик по одному слову. */
+.packmsg .head{flex-direction:column;align-items:stretch;gap:8px}
+.packmsg .head .t{min-width:0}
+.head .acts{display:flex;gap:8px;flex-wrap:wrap}
+.packmsg .head .acts .go{flex:1;min-width:0;white-space:nowrap}
+
+/* Поява рядка у стрічці: короткий зсув знизу вгору з проявленням. Рядки йдуть
+   по одному раз на пів секунди, і без анімації пачка виглядає як стрибок. */
+@keyframes lrow-in{
+  from{opacity:0;transform:translateY(6px) scale(.985)}
+  to{opacity:1;transform:none}
+}
+.lrow.enter{animation:lrow-in .28s cubic-bezier(.2,.8,.3,1) both}
+@media(prefers-reduced-motion:reduce){ .lrow.enter{animation:none} }
+
+/* Рядок стрічки клікається: у ньому видно хід, а повні аргументи й відповідь —
+   у картці за кліком. Обрізати там нічого не можна, а тут — обовʼязково. */
+.lrow.tap{cursor:pointer}
+.lrow.tap:hover{border-color:var(--blue)}
+.lrow.tap:active{transform:scale(.995)}
+.calljson{background:var(--tint);border:1px solid var(--line);border-radius:10px;
+  padding:10px 12px;margin:6px 0 14px;overflow:auto;max-height:280px;
+  font:11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;
+  word-break:break-word}
+
+/* ===================== скрол під модалкою =====================
+   Коли вміст модалки догортано до краю, браузер продовжує скрол СТОРІНКОЮ —
+   а що модалка вирівняна по центру, вона разом зі сторінкою підстрибує.
+   `overscroll-behavior:contain` зупиняє це ланцюгове прокручування, а клас
+   на <body> прибирає скрол сторінки на весь час, поки модалка відкрита. */
+dialog, dialog .sbody, #quiz-body, #picker-body, .calljson{overscroll-behavior:contain}
+dialog{max-height:90vh;overflow:auto}
+body.modal{overflow:hidden}
+
+/* «що всередині» — ланцюг кроків у самій картці сценарію, згорнутий */
+.scn .inside{margin-top:8px;border-top:1px dashed var(--line);padding-top:7px}
+.scn .inside summary{cursor:pointer;font-size:11.5px;color:var(--soft);
+  list-style:none;display:flex;align-items:center;gap:5px;user-select:none}
+.scn .inside summary::-webkit-details-marker{display:none}
+.scn .inside summary::before{content:'▸';font-size:10px;transition:transform .15s}
+.scn .inside[open] summary::before{transform:rotate(90deg)}
+.scn .inside summary:hover{color:var(--blue)}
+.scn .isteps{padding-top:6px}
+.scn .istep{display:flex;gap:8px;padding:6px 0;border-top:1px dashed var(--line)}
+.scn .istep:first-child{border-top:0}
+.scn .istep i{flex:0 0 auto;width:7px;height:7px;border-radius:50%;margin-top:5px}
+.scn .istep code{font:11.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
+  display:block;color:var(--ink)}
+.scn .istep .nt{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
+.scn .istep.res b{font-size:11.5px}
+
+/* Способи отримання — картками, а не таблицею: шість колонок у рамці 424 px
+   складались у стовпчик по одному слову на рядок і читались як каша. */
+.ways{display:flex;flex-direction:column;gap:8px}
+.way{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--card)}
+.way.short{border-color:#FECDD3;background:#FFF7F8}
+.way .wtop{display:flex;align-items:baseline;gap:10px}
+.way .wtop b{flex:1;min-width:0;font-size:14px}
+.way .cost{font-weight:700;white-space:nowrap}
+.way .wmeta{font-size:12px;color:var(--muted);margin-top:3px}
+.way .wnote{font-size:12px;color:var(--blue);margin-top:5px}
+.way .wnote.bad{color:var(--red)}
+
+/* Розмова тримається НИЗУ, як у будь-якому месенджері: нова репліка й підказки
+   мають бути під рукою біля поля вводу, а не висіти під шапкою над порожнечею.
+   `margin-top:auto` на стрічці штовхає її вниз, поки вміст не заповнить екран;
+   далі все поводиться як звичайний скрол. */
+#tab-chat{display:flex;flex-direction:column}
+#tab-chat[hidden]{display:none}
+#tab-chat #log{margin-top:auto}
+#tab-chat .quicks{margin-bottom:2px}
+
+/* Блок викликів під одним наміром: сценарій, запит у чаті або фон */
+.lgroup{margin-bottom:10px}
+.lgroup .gh{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--soft);padding:2px 2px 6px;position:sticky;top:0;background:var(--card);z-index:1}
+/* Ланцюг: картки одна під одною, між ними стрілка — видно, що за чим іде */
+.lgroup .gb{display:flex;flex-direction:column;gap:16px;border:0;padding-left:0}
+.lgroup .gb .lrow{position:relative}
+.lgroup .gb .lrow + .lrow::before{content:'';position:absolute;left:50%;top:-16px;width:2px;
+  height:11px;background:#C5CBD8;transform:translateX(-50%)}
+.lgroup .gb .lrow + .lrow::after{content:'';position:absolute;left:50%;top:-6px;
+  border:5px solid transparent;border-top:6px solid #C5CBD8;border-bottom:0;transform:translateX(-50%)}
+.lrow .tl{display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap}
+.lrow .tl code{font:10.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);
+  background:var(--tint);border-radius:6px;padding:1px 6px}
+.lrow .tl em{font-style:normal;font-size:10.5px;color:#7C3AED;font-weight:700}
+.lrow.prop .tl code{color:#6B34C9;background:#F1ECFF}
+
+/* перевірка перед «Оформити» — чек на чотири рядки */
+.precheck{display:flex;flex-direction:column;gap:0}
+.precheck .ph{font-weight:800;font-size:15px;margin-bottom:6px;display:flex;flex-direction:column;gap:2px}
+.precheck .ph .soft{font-weight:500;font-size:12px}
+.precheck .prow{padding:9px 0;border-top:1px dashed var(--line)}
+.precheck .pt{display:flex;align-items:center;gap:8px}
+.precheck .pt b{flex:1;font-size:14px}
+.precheck .pt i{font-style:normal;font-weight:800;width:22px;height:22px;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;font-size:13px}
+.precheck .pt i.ok{background:#E3F5EC;color:var(--green)}
+.precheck .pt i.bad{background:#FDE7EB;color:var(--red)}
+.precheck .pt i.none{background:var(--tint);color:var(--muted)}
+.precheck .ps{font-size:12.5px;margin-top:2px}
+.precheck .pd{font-size:12px;color:var(--muted);margin-top:2px}
+.precheck .pd.bad{color:var(--red)}
+.precheck code{display:block;font-size:10.5px;color:var(--muted);margin-top:4px;word-break:break-word}
+.precheck .pf{border-top:1px solid var(--line);padding-top:10px;margin-top:2px;display:flex;
+  flex-direction:column;gap:6px;font-size:13.5px}
+.precheck.clear .pf b{color:var(--green)}
+
+/* ===================== режим запису =====================
+   Лише телефон по центру. Шапка, панель сценаріїв, дев-підказка під полем
+   вводу й затемнення зникають; стрічка викликів — тільки в `rec-trace`. */
+body.rec .top{display:none}
+body.rec .side.l{display:none !important}
+body.rec:not(.rec-trace) .side.r{display:none !important}
+body.rec.mobile .shell.live,body.rec.mobile .shell.live:not(.l){grid-template-columns:0 minmax(0,1fr) 0}
+body.rec.rec-trace.mobile .shell.live,body.rec.rec-trace.mobile .shell.live:not(.l){
+  grid-template-columns:0 minmax(0,1fr) var(--live)}
+body.rec .shell.live > .side{top:0;height:100vh}
+body.rec{overflow:hidden}
+body.rec .main{height:100vh;align-items:center;padding:0}
+body.rec #chat-note{display:none}
+body.rec .scrim{display:none !important}
+/* На записі тости поза телефоном — у кадрі їх бути не має */
+body.rec .toast{display:none}
+
+/* «Куди йдуть гроші» — смужки по розділах, тап розкриває товари */
+.spend .bh{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--muted);margin:0 0 6px}
+.spend .sbar{display:grid;grid-template-columns:96px 1fr 62px;gap:8px;align-items:center;
+  width:100%;padding:5px 0;border:0;background:none;font:inherit;color:inherit;
+  text-align:left;cursor:pointer;border-radius:8px}
+.spend .sbar .sl{font-weight:700;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.spend .sbar .st{height:16px;border-radius:5px;background:var(--tint);overflow:hidden}
+.spend .sbar .st i{display:block;height:100%;background:var(--ink);border-radius:5px;
+  transition:background .15s}
+.spend .sbar .sv{font-size:12.5px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.spend .sbar.on .sl{color:#6B34C9}
+.spend .sbar.on .st i{background:#6B34C9}
+.spend .sitems{margin:2px 0 8px;padding:9px 11px;border:1px solid var(--line);border-radius:12px;
+  background:var(--card);box-shadow:0 6px 18px rgba(15,23,41,.08)}
+.spend .sh{font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:#6B34C9;margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid var(--line)}
+.spend .si{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:3px 0}
+.spend .si span{min-width:0}
+.spend .si b{white-space:nowrap;font-variant-numeric:tabular-nums}
+
+/* шпаргалка клавіш запису — Alt+K, поза кадром за замовчуванням */
+.reckeys{position:fixed;left:16px;bottom:16px;z-index:45;background:var(--card);
+  border:1px solid var(--line);border-radius:14px;padding:12px 14px;font-size:12.5px;
+  box-shadow:0 10px 30px rgba(15,23,41,.14);display:flex;flex-direction:column;gap:4px}
+.reckeys b{margin-bottom:4px}
+.reckeys kbd{display:inline-block;min-width:18px;text-align:center;padding:1px 5px;
+  margin-right:8px;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;
+  font:700 11.5px ui-monospace,Menlo,monospace;background:var(--tint)}
+.reckeys .soft{margin-top:6px}
+
+/* запрошення в компанію: QR + посилання */
+.invite{display:flex;gap:12px;align-items:flex-start;margin:10px 0 12px;padding:11px 12px;
+  border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.invite .qr{flex:none;width:118px;height:118px;border-radius:8px;background:#fff}
+.invite .it{display:flex;flex-direction:column;gap:5px;min-width:0;font-size:12.5px}
+.invite .it b{font-size:13.5px}
+.invite .lnk{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;word-break:break-all;
+  color:var(--blue)}
+.invite .fbtn{align-self:flex-start}
+
+/* хід агента: живий Машрум ліворуч від першої репліки */
+.turn{display:flex;align-items:flex-end;gap:6px;margin-bottom:9px}
+.turn .msg{margin-bottom:0}
+.mash{position:relative;flex:none;width:46px;height:48px;margin:0 0 -4px -6px;
+  background:url(/mushroom.png) center/contain no-repeat}
+.mash canvas{position:absolute;inset:0;width:100%;height:100%;opacity:0;transition:opacity .4s}
+.mash.rive{background:none}
+.mash.rive canvas{opacity:1}
+.msg.bot.cont{margin-left:46px}
+
+/* під кошиком — джерела в стовпчик, дуже коротко */
+.brief{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin-top:10px;
+  padding-top:9px;border-top:1px dashed var(--line);font-size:12px}
+.brief .bk{color:var(--muted);white-space:nowrap}
+.brief .bv{color:var(--ink)}
+
+/* KPI, по якому можна тапнути: «куди йдуть гроші» */
+.kpi.tapkpi{border:0;font:inherit;text-align:left;cursor:pointer;color:inherit;width:100%}
+.kpi.tapkpi:hover{background:var(--blue-soft)}
+.kpi.tapkpi span{color:var(--blue)}
+/* «Департамент дивинок» — банер у фірмових кольорах відділу */
+.deptbox{margin-top:18px;border-radius:16px;padding:16px 16px 14px;
+  background:linear-gradient(135deg,#4C1D95 0%,#7C3AED 60%,#A855F7 100%);color:#fff;
+  display:flex;flex-direction:column;gap:12px}
+.deptbox .dh b{display:block;font-size:19px;font-weight:800;letter-spacing:-.01em;color:#FFE066}
+.deptbox .dh span{display:block;font-size:12.5px;opacity:.85;margin-top:3px}
+.deptbox .go.light{background:#fff;color:#4C1D95;width:100%}
+.deptbox .go.light:hover{filter:none;background:#FFE066}
+/* коли колода вже йде — той самий банер стає рамкою для карток */
+.deptbox .deck{margin-top:0}
+.deptbox .deck-btns button{background:#fff}
+.deptbox #deck p.soft,.deptbox #deck p.muted{color:rgba(255,255,255,.85)}
+.packmsg .tocart{width:100%;margin-top:12px}
+
+/* ===================== модалки всередині телефона =====================
+   Підігнаний діалог (data-fit) — затемнення розміром з екран телефона;
+   внутрішній блок — картка знизу, зі скролом усередині. */
+dialog[data-fit],dialog.sheet[data-fit]{position:fixed;margin:0;padding:0;border:0;max-width:none;
+  max-height:none;background:rgba(15,23,41,.42);overflow:hidden;box-shadow:none;
+  display:flex;align-items:flex-end;justify-content:center}
+dialog[data-fit]:not([open]){display:none}
+dialog[data-fit]::backdrop,dialog.sheet[data-fit]::backdrop{background:transparent}
+dialog[data-fit] > div{background:var(--card);color:var(--ink);border-radius:18px 18px 0 0;
+  width:100%;max-height:92%;overflow-y:auto;padding:18px 18px 20px;box-sizing:border-box;
+  box-shadow:0 -12px 40px rgba(15,23,41,.18)}
+dialog.sheet[data-fit] > #sheet-body{padding:0}
+/* Скролить #sheet-body; .sbody не має бути окремим скрол-контейнером —
+   інакше overscroll-behavior:contain «зʼїдає» колесо, і модалка не гортається */
+dialog.sheet[data-fit] .sbody{max-height:none;overflow:visible;overscroll-behavior:auto}
+dialog[data-fit]:focus,dialog[data-fit] > div:focus{outline:none}
+
+/* дієти в компанії — помітно, як і алергії, але не тривожно */
+.dietbar{background:#FFF7E6;border:1px solid #FDE6B8;color:#7A4B00;border-radius:12px;
+  padding:9px 12px;font-size:13px;margin:8px 0}
+/* розрахунок: хто скільки платить */
+.payrow{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:9px 0;border-top:1px solid var(--line)}
+.payrow:first-of-type{border-top:0}
+.payrow .pn{display:flex;flex-direction:column;gap:1px;min-width:0}
+.payrow .pv{font-weight:800;font-size:16px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.payrow .pv.ok{color:var(--green);font-size:13px;font-weight:700}
+.payrow.total{border-top:2px solid var(--ink);margin-top:4px}
+.payrow.total .pv{font-size:17px}
+.payrow .pv .amt{border:0;background:none;font:inherit;color:inherit;cursor:pointer;padding:2px 6px;
+  border-radius:8px;border-bottom:1px dashed var(--line)}
+.payrow .pv .amt:hover{background:var(--tint)}
+.payrow .prop{display:block;font-size:12.5px;color:#7A4B00;background:#FFF7E6;border-radius:8px;
+  padding:4px 8px;margin-top:4px}
+.payrow .pv .amt:focus{outline:none}
+
+/* грибниця: чотири дрібні плитки в ряд і коріння на всю ширину */
+.iconrow.four,body.mobile .iconrow.four{grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:12px 0 0}
+.tile.sm{padding:9px 2px 8px;border-radius:12px}
+.tile.sm b{font-size:10.5px;letter-spacing:-.02em;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile.sm .n{margin-top:4px;font-size:10.5px}
+.myc.root{margin-top:12px;border-radius:12px;background:#0E0B16}
+.myc.root .lv text{font-family:inherit;pointer-events:none}
+/* картка колоди — біла, текст успадкував білий колір банера; повертаємо чорнило */
+.deptbox .swipecard{color:var(--ink)}
+.deptbox .swipecard .soft{color:var(--soft)}
+.deptbox .swipecard .old{color:var(--soft)}
