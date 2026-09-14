@@ -7,3 +7,7 @@ build/
 .mcp/
 profile_data.json
 probe_out/
+
+# колода пітчу, скріншоти й робочі нотатки — поза репозиторієм
+docs/
+.claude/

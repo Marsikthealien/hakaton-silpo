@@ -5,8 +5,7 @@
 
     .venv/bin/python qa/smoke.py
 
-Очікується «усе зелене». Що саме перевіряється й з чим звіряти результат —
-docs/CHECKLIST.md.
+Очікується «усе зелене». Що саме перевіряється — розділ «Перевірка» в README.
 """
 
 import asyncio, os, sys, time
@@ -36,30 +35,16 @@ async def main():
               lambda r: f'{r["name"]}, {r["receipts"]["count"]} чеків')
     await run('weekly_pack', facade.weekly_pack(budget_uah=900, novelty='new'), has, total)
     await run('budget_pack', facade.budget_pack(700, 7, novelty='familiar'), has, total)
-    await run('party_pack', facade.party_pack('пікнік', 5, 1200), has, total)
     await run('family_pack', facade.family_pack('вечеря', 900), has,
               lambda r: total(r) + ' · блок: ' + ','.join(r['blocked_for_everyone']))
     await run('kids_pack', insights.kids_pack(400), has, total)
-    await run('office_pack', insights.office_pack(['кава','печиво','вода'], 12, 1500), has, total)
-    await run('send_to_family', insights.send_to_family('Полтава', ['кава','чай'], max_uah=400), has,
-              lambda r: total(r) + f' · {r["nova_poshta"]["offices_total"]} відділень')
     await run('meal_pack new', facade.meal_pack(meal='вечеря', max_uah=500, novelty='new'), has, total)
-    await run('evening_pack', facade.evening_pack('футбол', 700, novelty='familiar', people=4), has, total)
-    await run('reminders', facade.reminders(), lambda r: 'overdue' in r, lambda r: r['headline'])
     await run('coupon_audit', insights.coupon_audit(), lambda r: r['coupons_total'] > 0, lambda r: r['headline'])
     await run('savings_report', insights.savings_report(), lambda r: r['paid_uah'] > 0, lambda r: r['headline'])
     await run('spend_report', insights.spend_report(),
               lambda r: r['categories'] and all('items' in c for c in r['categories']), lambda r: r['headline'])
     await run('plus_check', insights.plus_check(), lambda r: r['verdict'], lambda r: r['verdict'])
-    await run('popular_now', insights.popular_now(), lambda r: r['count'] > 0, lambda r: str(r['count']))
-    # Плаваючий збій ловиться лише серією: один успішний виклик нічого не доводить.
-    certs = [await insights.certificates() for _ in range(5)]
-    await run('certificates x5', asyncio.sleep(0, result=certs),
-              lambda rs: all(c.get('available') for c in rs),
-              lambda rs: f"{sum(bool(c.get('available')) for c in rs)}/5 без 500 - {rs[0]['headline']}")
     await run('impulse_check', insights.impulse_check('кола'), lambda r: r['verdict'], lambda r: r['verdict'])
-    await run('compare_branches', insights.compare_branches(['молоко','хліб'], limit=3),
-              lambda r: r.get('best'), lambda r: r['headline'][:70])
     await run('game_profile', game.game_profile(), lambda r: r['level'] > 1,
               lambda r: f'рівень {r["level"]}, {r["xp"]} XP, {r["achievements_done"]}/{r["achievements_total"]}')
     await run('achievements', game.achievements(), lambda r: r['total'] == 14, lambda r: f'{r["done"]}/{r["total"]}')
@@ -80,7 +65,6 @@ async def main():
                   lambda r: r['said'])
     if p:
         await run('picking_risk', insights.picking_risk(p['id']), lambda r: 'risky' in r, lambda r: r['headline'][:60])
-        await run('eco_check', insights.eco_check(p['id']), lambda r: 'score' in r, lambda r: f'оцінка {r["score"]}')
         await run('optimize_pack', facade.optimize_pack(p['id']), lambda r: r is not None, lambda r: '')
         await run('precheck_pack', facade.precheck_pack(p['id']),
                   lambda r: [c['id'] for c in r['checks']] == ['delivery', 'weight', 'coupon', 'promo'],

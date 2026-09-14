@@ -1197,63 +1197,6 @@ def _aisle_of(name: str) -> tuple[str, str]:
     return "inshe", "Інше"
 
 
-def store_route(items: list[dict], branch_id: str | None = None) -> dict:
-    """ЗАПРОПОНОВАНИЙ tool. Порядок обходу залу під конкретний кошик.
-
-    Розділи справжні — з `silpo_get_categories_tree`, у порядку самого «Сільпо».
-    Прив'язку товару до розділу доводиться вгадувати за назвою: у відповіді про
-    товар немає категорії навіть тоді, коли товар дістали запитом по категорії.
-
-    Порядок відділів у конкретному магазині свій, тож його можна переставити —
-    і ми запамʼятаємо його для цього branchId.
-    """
-    done = _traced("silpo_get_store_layout", {"branchId": branch_id,
-                                              "items": len(items or [])})
-    data = _load()
-    saved = (data.get("layouts") or {}).get(branch_id or "default")
-    default_order = [c[0] for c in SILPO_CATEGORIES] + ["inshe"]
-    order = saved or default_order
-
-    titles = {c[0]: c[1] for c in SILPO_CATEGORIES}
-    titles["inshe"] = "Інше"
-    grouped: dict[str, list] = {}
-    guessed = 0
-    for item in items or []:
-        slug, _ = _aisle_of(item.get("name", ""))
-        grouped.setdefault(slug, []).append(item.get("name"))
-        guessed += 1
-    route = [{"slug": slug, "aisle": titles.get(slug, slug), "items": grouped[slug]}
-             for slug in order if slug in grouped]
-    done(f"{len(route)} відділів")
-    return {
-        "branch_id": branch_id, "custom_order": bool(saved),
-        "route": route, "steps": len(route),
-        "categories_source": "silpo_get_categories_tree · 28 розділів",
-        "guessed_by_name": guessed,
-        "proposed": True,
-        "spec": ("Каталог-дерево «Сільпо» вже віддає 28 розділів у своєму порядку — "
-                 "цього достатньо для маршруту. Бракує одного поля: categoryId у "
-                 "картці товару. Зараз його немає навіть у відповіді на запит ПО "
-                 "КАТЕГОРІЇ, тож відділ доводиться вгадувати за назвою. "
-                 "Друга частина — порядок відділів у конкретному магазині: "
-                 "планування різне, і його знає лише сам магазин. " + SPEC_URL),
-    }
-
-
-def save_store_route(branch_id: str, order: list[str]) -> dict:
-    """Запамʼятати порядок відділів для цього магазину.
-
-    Планування різне, і ніхто, крім самого магазину, його не знає. Тож даємо
-    гостю переставити один раз — і більше не питаємо.
-    """
-    done = _traced("silpo_save_store_layout", {"branchId": branch_id})
-    data = _load()
-    data.setdefault("layouts", {})[branch_id or "default"] = order
-    _save(data)
-    done()
-    return {"branch_id": branch_id, "order": order, "proposed": True}
-
-
 # ---------------------------------------------------------------------------
 # 11. Спадкова кухня — сімейні рецепти
 # ---------------------------------------------------------------------------

@@ -38,18 +38,17 @@ _PREFERRED = ["qwen2.5:7b", "qwen2.5:3b", "qwen2.5:3b-instruct",
 
 ALLOWED = {
     "who_am_i", "build_pack", "pack_from_receipt", "reorder_pack",
-    "mood_pack", "evening_pack", "breakfast_pack",
-    "weekly_pack", "budget_pack", "party_pack",
+    "mood_pack", "meal_pack", "family_pack", "weekly_pack", "budget_pack",
     "optimize_pack", "swap_item", "pack_to_cart", "save_pack", "precheck_pack",
     # правка поточного пака словами
     "pack_add", "pack_remove", "pack_set_qty", "pack_swap_named", "get_pack",
     "my_packs", "my_perks",
     # аналітика: відповідь — число з чеків, і модель має вміти її дістати
     "coupon_audit", "savings_report", "spend_report", "impulse_check",
-    "plus_check", "reminders",
+    "plus_check",
     # грибниця
     "silpo_get_game_profile", "silpo_get_achievements",
-    "get_profile", "update_profile", "remember_fact",
+    "get_profile", "update_profile",
 }
 
 # Стиль мовлення — за порадою Respeecher із каналу хакатону. Це не косметика:
@@ -85,8 +84,8 @@ SYSTEM = (
     "items (перелік того, що шукати — вигадай його сам), max_uah.\n"
     "• 'Як минулого разу', 'повтори покупку' — pack_from_receipt.\n"
     "• Настрій ('мені грайливо', 'втомився') — mood_pack.\n"
-    "• Вечір удома ('футбол', 'фільм', 'романтична вечеря') — evening_pack.\n"
-    "• 'Сніданок на 200 грн' — breakfast_pack (поверне ще й рецепт).\n"
+    "• 'Сніданок', 'вечеря на 500 грн' — meal_pack (поверне ще й рецепт).\n"
+    "• 'Збери вечерю, щоб усім підійшло' — family_pack: страва під родину.\n"
     "• 'Не їм гриби', 'алергія на горіхи', 'люблю пасту' — update_profile.\n"
     "• 'Що зазвичай беру', 'закінчилось' — reorder_pack.\n"
     "• Перед покупкою — optimize_pack: покаже, які купони й промо спрацюють і "
@@ -101,13 +100,10 @@ SYSTEM = (
     "• 'Збережи' — save_pack.\n"
     "• 'Поклади в кошик', 'беру' — pack_to_cart.\n"
     "• Кошик на тиждень — weekly_pack. 'Лишилось N грн' — budget_pack.\n"
-    "• 'Шашлик на шістьох', 'настолки на чотирьох' — party_pack: theme, people.\n"
     "• 'Скільки я зекономив' — savings_report. 'Куди йдуть гроші' — spend_report.\n"
     "• 'Купони', 'що згорає' — coupon_audit. 'Чи вигідний Плюхс' — plus_check.\n"
     "• 'Чи варто брати X' — impulse_check: іноді правильна відповідь «не бери».\n"
-    "• 'Що скінчилось', 'нагадай' — reminders.\n"
     "• 'Мій рівень', 'грибниця', 'досягнення' — silpo_get_game_profile.\n"
-    "• Важливі факти про людину (алергія, улюблений фільм) — remember_fact.\n"
     "ВАЖЛИВО про новизну: перш ніж збирати вечерю, страву чи набір під подію, "
     "спитай одним реченням — хочеться чогось ЗНАЙОМОГО чи чогось НОВОГО. "
     "Далі передай novelty='familiar' або novelty='new' у той самий tool. "
@@ -136,9 +132,9 @@ async def _fallback(messages: list[dict], host, pack_id: str | None = None) -> d
         pack = (await host.call("get_pack", {"pack_id": pack_id})) or {}
         if pack.get("total_uah"):
             args["cart_total_uah"] = float(pack["total_uah"])
-    if intent["tool"] in ("build_pack", "meal_pack", "mood_pack", "evening_pack",
+    if intent["tool"] in ("build_pack", "meal_pack", "mood_pack",
                           "pack_from_receipt", "reorder_pack", "weekly_pack",
-                          "budget_pack", "party_pack", "family_pack"):
+                          "budget_pack", "family_pack"):
         avoid = (profile.get("allergies") or []) + (profile.get("dislikes") or [])
         if avoid:
             args.setdefault("avoid", avoid)
@@ -413,18 +409,10 @@ _INTENTS = [
     (("доставк", "топати", "дійти", "найближч", "магазин поруч"),
      "silpo_estimate_delivery", {"latitude": 50.5187, "longitude": 30.4986,
                                  "cart_total_uah": 700}, "впізнав «топати чи замовити»"),
-    (("маршрут", "по залу", "де шукати", "обхід"),
-     "silpo_get_store_layout", {}, "впізнав «маршрут по залу»"),
-    (("футбол", "фільм", "серіал", "телевізор", "залипнут"),
-     "evening_pack", {"genre": "фільм", "max_uah": 700}, "впізнав «вечір удома»"),
     (("сніданок", "обід", "вечер", "десерт", "приготув", "рецепт"),
      "meal_pack", {}, "впізнав «страва на суму»"),
     (("настрій", "фрукт", "сумно", "весело"),
      "mood_pack", {"mood": "ігривий", "max_uah": 600}, "впізнав «настрій»"),
-    (("не забудь", "нагада", "скінчи"),
-     "reminders", {}, "впізнав «не забудь»"),
-    # «скін» стоїть після «скінчи»: «скінчилось» містить «скін», і без цього
-    # порядку нагадування їхали у профіль грибниці
     (("рівен", "грибниц", "досвід", "скіни", "машрум"),
      "silpo_get_game_profile", {}, "впізнав «мій рівень»"),
     (("досягнен", "ачівк", "тематичн"),
@@ -446,8 +434,6 @@ _INTENTS = [
     (("компанією", "компанію на", "зберемось", "зберемося", "збираємось", "збираємося",
       "створи компані", "нова компані"),
      "crew_propose", {}, "впізнав «зберемось компанією»"),
-    (("шашлик", "настолк", "пікнік", "на шість", "на всіх нас", "компані"),
-     "party_pack", {"theme": "шашлик", "people": 6}, "впізнав «зустріч»"),
     (("на тиждень", "тижнев", "закуп"),
      "weekly_pack", {}, "впізнав «тижневий закуп»"),
     (("лишилось", "бюджет"),

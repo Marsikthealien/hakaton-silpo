@@ -465,17 +465,14 @@ python -m silpo_agent_mcp.server            # фасад як окремий std
 ## Перевірка
 
 ```bash
-.venv/bin/python qa/smoke.py                 # 32 перевірки на живому API
-node --experimental-websocket qa/ui.mjs      # UI у Chromium
-node --experimental-websocket qa/family.mjs  # «Вечеря на всю сімʼю» → перевірка перед «Оформити», 22 кроки
+.venv/bin/python qa/smoke.py                 # перевірки бекенду на живому API
+node --experimental-websocket qa/family.mjs  # «Вечеря на всю сімʼю» → перевірка перед «Оформити», 22 кроки в Chromium
 ```
 
-Для `*.mjs` потрібен Chromium із `--remote-debugging-port=9222` і сервер на
-`:8000`. Режим запису демо — `/?rec`, клавіші-кроки описані в
-[`docs/CHECKLIST.md`](docs/CHECKLIST.md#8-запуск).
-
-Покроковий чеклист із числами, з якими можна звірятись, —
-[`docs/CHECKLIST.md`](docs/CHECKLIST.md).
+Для `family.mjs` потрібен Chromium із `--remote-debugging-port=9222` і сервер
+на `:8000`. Перед дублем демо: `POST /api/demo/reset` і `POST /api/weights/rebuild`
+(тестові кліки «У кошик» надувають ваги). Режим запису — `/?rec`, клавіші-кроки
+описані вище в «Інтерфейс і запис демо».
 
 ---
 
@@ -524,12 +521,20 @@ web/          MCP-хост (Starlette), чат без моделі й з нею,
 qa/           smoke.py, ui.mjs, family.mjs — перевірки на живому API
 ```
 
-## Документація
+## Локальна модель (необовʼязково)
 
-| Документ | Про що |
-|---|---|
-| [`docs/pitch-v2.html`](docs/pitch-v2.html) | Колода пітчу (16:9, клавіша S — сценарій озвучення) |
-| [`docs/CHECKLIST.md`](docs/CHECKLIST.md) | **Як перевірити все руками** — і в нашому UI, і в самому «Сільпо»; запис демо й клавіші |
-| [`docs/LOCAL_LLM.md`](docs/LOCAL_LLM.md) | Як підняти проєкт і локальну модель на **Windows**, покроково |
-| [`docs/scenarios.html`](docs/scenarios.html) | Усі end-to-end сценарії: що працює, що додаємо, яких tools бракує |
-| [`docs/research/`](docs/research/) | Схеми 40 tools MCP і розбір застосунку «Сільпо» — 228 ендпоінтів |
+Усі демо йдуть «Напряму» — без моделі. Режим «Через модель» дає той самий
+результат тим самим викликом, а модель лише переказує його людською мовою.
+Якщо хочеться:
+
+1. Постав [Ollama](https://ollama.com/download); перевір `ollama --version`.
+2. Модель під відеопамʼять: 12 ГБ+ — `qwen2.5:14b`, 8 ГБ — `qwen2.5:7b`
+   (рекомендовано), 4 ГБ або без відеокарти — `qwen2.5:3b` (працює, але часто
+   плутає інструменти).
+3. `ollama pull qwen2.5:7b`, Ollama має бути запущена; сервер сам бачить її на
+   `http://localhost:11434` (`OLLAMA_URL`, щоб змінити).
+4. Windows: `python -m venv .venv`, `.venv\Scripts\Activate.ps1`,
+   `pip install -r requirements.txt`, далі як у «Запуск».
+
+Голос агента: Respeecher `ua-rt` (ключ — на сторінці `/tech`), запасний —
+голос браузера.

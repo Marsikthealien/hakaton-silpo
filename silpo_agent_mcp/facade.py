@@ -1262,34 +1262,6 @@ _MOODS = {
     "бадьорий": ["кава зернова", "йогурт", "горіхи мікс"],
 }
 
-# Жанр вечора → готовий набір «Сільпо» (реальна курація) + що додати пошуком.
-_EVENINGS = {
-    "футбол": {"set": "lvivske-310", "items": ["чипси", "сухарики", "ковбаски"]},
-    "фільм": {"set": "dlia-smachnoi-vecheri", "items": ["попкорн", "кола"]},
-    "серіал": {"set": "dlia-smachnoi-vecheri", "items": ["снеки", "морозиво"]},
-    "романтична вечеря": {"set": "vyno-vivino", "items": ["сир твердий", "виноград"]},
-    "компанія": {"set": "pitsa-sushi-ta-burhery", "items": ["чипси", "кола"]},
-}
-
-# Рецепти — наш контент, а не вигадка на льоту. Товари під них шукаються в «Сільпо».
-_BREAKFASTS = [
-    {"title": "Омлет із сиром", "items": ["яйця", "сир твердий", "молоко", "масло вершкове"],
-     "steps": ["Збий 3 яйця з ложкою молока.", "Вилий на розігріту пательню з маслом.",
-               "За хвилину додай тертий сир і склади навпіл."]},
-    {"title": "Сирники", "items": ["сир кисломолочний", "яйця", "борошно", "сметана"],
-     "steps": ["Змішай сир, яйце і 2 ложки борошна.", "Сформуй сирники, обкачай у борошні.",
-               "Смаж по 3 хвилини з боку. Подавай зі сметаною."]},
-    {"title": "Вівсянка з бананом", "items": ["пластівці вівсяні", "банан", "молоко", "мед"],
-     "steps": ["Залий пластівці гарячим молоком на 5 хвилин.",
-               "Додай нарізаний банан і ложку меду."]},
-    {"title": "Тост з авокадо та яйцем", "items": ["хліб", "авокадо", "яйця"],
-     "steps": ["Підсмаж хліб.", "Розімни авокадо виделкою, посоли.",
-               "Зверху — яйце пашот або смажене."]},
-    {"title": "Йогурт із гранолою", "items": ["йогурт", "гранола", "ягоди"],
-     "steps": ["Виклади йогурт у миску.", "Зверху — гранола і ягоди."]},
-]
-
-
 async def mood_pack(mood: str, max_uah: float | None = None,
                     items: list[str] | None = None, avoid: list[str] | None = None,
                     novelty: str = "any", prefer_promo: bool = False) -> dict:
@@ -1312,96 +1284,9 @@ async def mood_pack(mood: str, max_uah: float | None = None,
     return pack
 
 
-async def evening_pack(genre: str, max_uah: float | None = None,
-                       avoid: list[str] | None = None, novelty: str = "any",
-                       people: int = 2, prefer_promo: bool = False) -> dict:
-    """Пак під вечір удома: футбол → пиво, фільм → снеки, романтика → вино.
-
-    Основа — готові набори самого «Сільпо» (`get_product_sets`), тож підбірку
-    курує магазин, а ми лише прибираємо небажане й тримаємо бюджет.
-    """
-    key = (genre or "").lower().strip()
-    rule = _EVENINGS.get(key) or next(
-        (v for k, v in _EVENINGS.items() if k in key or key in k), None)
-    if not rule:
-        raise SilpoError(f"Не знаю жанру «{genre}». Відомі: {', '.join(_EVENINGS)}.")
-
-    # Набір «Сільпо» дає настрій вечора, але не має з'їдати весь бюджет:
-    # без цієї межі два вина забирають 728 з 800, і на сир уже не лишається.
-    set_budget = None if max_uah is None else round(max_uah * 0.6, 2)
-    budget = max_uah
-    chosen: list[dict] = []
-    try:
-        base = await pack_from_set(rule["set"], name=genre, max_uah=set_budget,
-                                   only_promo=False, avoid=avoid, limit=6)
-        chosen = base["items"][:2]
-        packs.delete(base["id"])  # то був чернетковий пак, лишаємо тільки позиції
-        budget = None if budget is None else budget - sum(i["price"] for i in chosen)
-    except SilpoError:
-        pass  # набору може не бути в цьому магазині — доберемо самим пошуком
-
-    extra = await build_pack(f"Вечір: {genre}", rule["items"], max_uah=budget, avoid=avoid,
-                             novelty=novelty, prefer_promo=prefer_promo)
-    items = chosen + extra["items"]
-    if people > 2:
-        # Кількість масштабуємо від двох, і лише для того, що ділиться: пляшка
-        # вина на шістьох — це три пляшки, а один соус лишається одним.
-        share = max(1, round(people / 2))
-        for item in items:
-            if not item.get("weighted"):
-                item["qty"] = item.get("qty", 1) * share
-    packs.set_items(extra["id"], items)
-    pack = packs.get(extra["id"])
-    pack["genre"] = key
-    pack["people"] = people
-    pack["novelty"] = novelty
-    pack["silpo_set"] = rule["set"]
-    return pack
-
-
-async def breakfast_pack(max_uah: float = 300, avoid: list[str] | None = None,
-                         prefer: str | None = None) -> dict:
-    """Сніданок на суму: рецепт + реальні продукти під нього, без алергенів.
-
-    Рецепт обираємо той, що вкладається в бюджет і не містить нічого з `avoid`.
-    Порядок перебору враховує звички з чеків: те, що людина й так бере.
-    """
-    terms = expand_avoid(avoid)
-    options = [r for r in _BREAKFASTS
-               if not any(_blocked_by(i, terms) for i in r["items"])]
-    if prefer:
-        options.sort(key=lambda r: prefer.lower() not in r["title"].lower())
-    if not options:
-        raise SilpoError("Усі рецепти сніданку містять те, чого тобі не можна.")
-
-    # звички з чеків: рецепт зі знайомих продуктів приємніший за екзотичний
-    try:
-        habit_words = " ".join(h["name"].lower() for h in _habits(await _raw_receipts()))
-    except Exception:
-        habit_words = ""
-    if habit_words:
-        options.sort(key=lambda r: -sum(1 for i in r["items"] if i.split()[0] in habit_words))
-
-    last_error = None
-    for recipe in options:
-        try:
-            pack = await build_pack(recipe["title"], recipe["items"],
-                                    max_uah=max_uah, avoid=avoid)
-        except SilpoError as exc:
-            last_error = exc
-            continue
-        if pack["items"] and pack["total_uah"] <= max_uah:
-            pack["recipe"] = {"title": recipe["title"], "steps": recipe["steps"]}
-            pack["skipped_recipes"] = [r["title"] for r in options if r is not recipe]
-            return pack
-        packs.delete(pack["id"])
-    raise SilpoError(f"У {max_uah} ₴ жоден сніданок не вклався. {last_error or ''}".strip())
-
-
 def scenarios() -> dict:
     """Довідник доступних сценаріїв — щоб UI не хардкодив списки."""
-    return {"moods": sorted(_MOODS), "evenings": sorted(_EVENINGS),
-            "breakfasts": [r["title"] for r in _BREAKFASTS]}
+    return {"moods": sorted(_MOODS)}
 
 
 # ---------------------------------------------------------------------------
@@ -1461,13 +1346,6 @@ async def meal_pack(query: str | None = None, meal: str | None = None,
             return pack
         packs.delete(pack["id"])
     raise SilpoError(f"У {max_uah} ₴ жодна страва не вклалась. {last_error or ''}".strip())
-
-
-async def breakfast_pack(max_uah: float = 300, avoid: list[str] | None = None,
-                         prefer: str | None = None, novelty: str = "any") -> dict:
-    """Сніданок на суму — окремий вхід у meal_pack для звичного сценарію."""
-    return await meal_pack(query=prefer, meal="сніданок", max_uah=max_uah, avoid=avoid,
-                           novelty=novelty)
 
 
 # ---------------------------------------------------------------------------
@@ -1867,98 +1745,9 @@ _MISSIONS = {
 }
 
 
-async def party_pack(theme: str, people: int = 4, max_uah: float | None = None,
-                     novelty: str = "any", avoid: list[str] | None = None,
-                     prefer_promo: bool = False) -> dict:
-    """Тема зустрічі + кількість людей → готовий кошик із кількостями.
-
-    Один запит замість двадцяти рішень: скільки м'яса на шістьох, скільки пива,
-    чи вистачить лаваша. Кількість рахуємо від людей, а не «по одній штуці».
-    """
-    key = (theme or "").lower().strip()
-    rule = _MISSIONS.get(key) or next((v for k, v in _MISSIONS.items()
-                                       if k in key or key in k), None)
-    if not rule:
-        # Тема не з нашого списку — може, це жанр вечора з реальним набором «Сільпо»
-        try:
-            pack = await evening_pack(theme, max_uah=max_uah, avoid=avoid,
-                                      novelty=novelty, people=people,
-                                      prefer_promo=prefer_promo)
-            pack["mission"] = key
-            return pack
-        except SilpoError:
-            raise SilpoError(f"Не знаю теми «{theme}». Відомі: "
-                             f"{', '.join(list(_MISSIONS) + list(_EVENINGS))}.")
-
-    pack = await build_pack(f"{theme} на {people}", rule["items"], max_uah=max_uah,
-                            avoid=avoid, novelty=novelty, prefer_promo=prefer_promo)
-    share = rule["per_person"] * people
-    once = rule.get("once") or []
-    for item in pack["items"]:
-        query = (item.get("query") or "").lower()
-        if any(word in query for word in once):
-            item["qty"] = 1
-            item["scaled"] = "одна на компанію"
-            continue
-        item["qty"] = round(max(share, 0.5), 1) if item.get("weighted") else max(1, round(share))
-        item["scaled"] = f"×{item['qty']} на {people} осіб"
-    skipped = pack.get("skipped") or []
-    packs.set_items(pack["id"], pack["items"])
-    pack = packs.get(pack["id"])
-    pack["skipped"] = skipped
-    pack["mission"] = key
-    pack["people"] = people
-    pack["why"] = (f"Кількості пораховано на {people} осіб: вагове — в кілограмах, "
-                   "штучне — в штуках. Ціни в паку вже з урахуванням кількості.")
-    return pack
-
-
 # ---------------------------------------------------------------------------
 # Не забудь: нагадування за циклом покупок
 # ---------------------------------------------------------------------------
-async def reminders(horizon_days: int = 5) -> dict:
-    """Що скінчиться найближчими днями — рахуючи з чеків, без жодних нагадувань від людини.
-
-    «Корм коту кожні 30 днів» не треба вносити руками: воно вже є в історії
-    покупок, просто ніхто не рахує.
-    """
-    from .game import all_receipts
-
-    orders = await all_receipts()
-    habits = _habits(orders)
-    family = await silpo.call("silpo_get_my_family", {})
-    pets = family.get("pets") or []
-
-    soon, overdue = [], []
-    for habit in habits:
-        left = habit["cycle_days"] - habit["days_since"]
-        row = {"name": habit["name"], "slug": habit["slug"],
-               "cycle_days": habit["cycle_days"], "days_left": left,
-               "times": habit["times"], "confidence": habit["confidence"],
-               "last_bought": habit["last_bought"]}
-        if left < 0:
-            overdue.append(row)
-        elif left <= horizon_days:
-            soon.append(row)
-    overdue.sort(key=lambda r: r["days_left"])
-    soon.sort(key=lambda r: r["days_left"])
-
-    pet_note = None
-    if pets:
-        feed = next((h for h in habits if "корм" in (h["name"] or "").lower()), None)
-        pet_note = (f"{pets[0].get('name')}: {feed['name']} кожні {feed['cycle_days']} дн."
-                    if feed else
-                    f"{pets[0].get('name')} є в профілі, але корму в чеках не видно")
-
-    return {"overdue": overdue[:8], "soon": soon[:8],
-            "horizon_days": horizon_days, "habits_tracked": len(habits),
-            "pets": pets, "pet_note": pet_note,
-            "headline": (f"Прострочено {len(overdue)}, найближчими {horizon_days} днями "
-                         f"скінчиться ще {len(soon)}."),
-            "why": ("Нагадування без того, щоб гість щось заводив руками: цикл покупки "
-                    "виводиться з дат у чеках.")}
-
-
 # ---------------------------------------------------------------------------
 # Вечеря на всю родину
 # ---------------------------------------------------------------------------

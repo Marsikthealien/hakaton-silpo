@@ -94,7 +94,7 @@ function mountTop(current) {
         <span class="dot"></span>
         <span><b>${home ? '' : '← '}Машрум Генадійович</b>
           <span>Персоналізація${{profile:' · профіль', game:' · грибниця',
-                   road:' · шлях', tech:' · під капотом'}[current] || ''}</span></span></a>
+                   tech:' · під капотом'}[current] || ''}</span></span></a>
       ${tech ? '' : `<button class="iconbtn sm plain" id="btn-left"
         onclick="togglePanel('l')" title="Сценарії" aria-pressed="true"
         >${icon('panel', 18)}</button>`}
@@ -1055,24 +1055,8 @@ const HANDLERS = {
   geo:      { path: '/api/delivery', geo: true },
   weight:   { path: '/api/weight', method: 'GET' },
 
-  // meal  — рецепти Машрум робить добре, і база в «Сільпо» вже є;
-  // party — математика «на N людей» переїхала всередину «Компанії».
-  // Tools лишились живими: модель у чаті може їх викликати, зникли лише
-  // картки — бо це не наші ідеї, а те, що в застосунку вже працює.
-  // meal:     { path: '/api/pack/meal', ask: 'meal', novelty: true },
-  // party:    { path: '/api/pack/party', ask: 'party', novelty: true },
-  //
-  // Знято з інтерфейсу — див. пояснення в silpo_agent_mcp/flows.py:
-  //   evening — дублює «Вино під страву або настрій» Машрума; курація
-  //             наборів переїхала всередину mood;
-  //   route   — маршрут будувався на вгаданих розділах (categoryId у картці
-  //             товару немає), тобто на здогадці;
-  //   send    — «Нова пошта» була сценарієм тому, що є tool, а не тому, що
-  //             хтось так робить.
-  // Ендпоінти лишились живими, тож повернути картку — це один рядок.
-  // evening:  { path: '/api/pack/evening', quiz: 'evening', novelty: true },
-  // route:    { path: '/api/route', needsPack: true },
-  // send:     { path: '/api/pack/send', ask: 'send' },
+  // meal — рецепти Машрум робить добре, і база в «Сільпо» вже є; tool живий,
+  // картки немає. Сценарії, зняті зовсім, описані в silpo_agent_mcp/flows.py.
 };
 
 /* Аналітика: відповідь — одне число, а не пак. */
@@ -1082,16 +1066,6 @@ const INSIGHT_HANDLERS = {
   spend:    { path: '/api/spend' },
   plus:     { path: '/api/plus' },
   risk:     { path: '/api/risk', method: 'POST' },
-  // reminders — дублювало «Що в мене закінчилось»;
-  // popular / certs / compare — персональних даних не потребують і в тому чи
-  // іншому вигляді вже є в застосунку та на сайті.
-  // reminders:{ path: '/api/reminders' },
-  // popular:  { path: '/api/popular' },
-  // certs:    { path: '/api/certificates' },
-  // compare:  { path: '/api/compare', ask: 'compare' },
-  // eco — знято: пакування в картці товару немає, тож «екослід» рахувався з
-  // ваги. Число, яке виглядає як вимір, але виміром не є.
-  // eco:      { path: '/api/eco' },
   impulse:  { path: '/api/impulse', ask: 'impulse' },
 };
 
@@ -1313,7 +1287,6 @@ function handleResult(s, r, opts = {}) {
   if (s.id === 'wellbeing') return renderWellbeing(r);
   if (s.id === 'weight') return renderWeight(r);
   if (s.id === 'precheck') return renderPrecheck(r);
-  // if (s.id === 'route') return renderRoute(r);   // сценарій знято
   if (s.id === 'heirloom') return renderHeirloom(r);
   toast('Готово');
 }
@@ -1332,13 +1305,6 @@ const QUIZ = {
       answers.forEach(m => score[m] = (score[m] || 0) + 1);
       return { mood: Object.keys(score).sort((a, b) => score[b] - score[a])[0], max_uah: 600 };
     } },
-  evening: { title: 'Вечір удома', steps: [
-    { q: 'Що вмикаєш?', a: [['Футбол','футбол'],['Фільм','фільм'],['Серіал','серіал'],
-      ['Нічого — просто вечеря','вечеря']] },
-    { q: 'Скільки вас?', a: [['Сам / сама','сам'],['Удвох','романтична вечеря'],
-      ['Компанія','компанія']] }],
-    finish: ([what, who]) => ({
-      genre: what !== 'вечеря' ? what : (who === 'сам' ? 'фільм' : who), max_uah: 700 }) },
 };
 
 function openQuiz(s) {
@@ -2192,16 +2158,6 @@ function renderWeight(r) {
         ${o.fits ? '✓' : '· перевищення ' + o.over_kg + ' кг'}</span></div>`).join('')}`;
 }
 
-function renderRoute(r) {
-  packSlot().innerHTML = `
-    <h2>Маршрут по залу</h2>
-    <p class="soft" style="margin:0 0 12px">${r.steps} відділів.
-      Планування в кожному магазині своє — порядок можна переставити, і ми його запамʼятаємо
-      для цього магазину.</p>
-    ${r.route.map((step, n) => `<div class="habit">
-      <b>${n + 1}. ${step.aisle}</b>${step.items.join(' · ')}</div>`).join('')}
-    <div class="note" style="margin-top:12px">${r.spec}</div>`;
-}
 
 async function renderHeirloom(r) {
   packSlot().innerHTML = `
@@ -2302,24 +2258,6 @@ const ASKS = {
         onclick="quiz.close();runScenario('budget',{budget_uah:+$('#b-sum').value||500,days:+$('#b-days').value||7})">Зібрати</button>`;
     quiz.showModal();
   },
-  party: s => {
-    const themes = ['шашлик','настолки','пікнік','день народження','футбол','фільм'];
-    $('#quiz-body').innerHTML = `
-      <h2 style="margin:0 0 2px">Зустріч</h2>
-      <div class="soft">Кількості рахуються на людей: вагове в кілограмах, штучне
-        в штуках. Мішок вугілля лишається одним і на трьох, і на шістьох.</div>
-      <h3>Тема</h3>
-      <div class="quiz" style="grid-template-columns:repeat(3,1fr)">
-        ${themes.map(t => `<button data-th="${t}" onclick="partyPick('${t}')">${t}</button>`).join('')}</div>
-      <h3>Скільки людей і бюджет</h3>
-      <div class="filters">
-        <input id="p-people" type="number" value="6" min="2" max="30" style="max-width:90px">
-        <input id="p-sum" type="number" placeholder="бюджет" step="100"></div>
-      <button class="go" style="width:100%;margin-top:12px" onclick="partyGo()">Зібрати</button>`;
-    window.PARTY = 'шашлик';
-    quiz.showModal();
-    setTimeout(() => partyPick('шашлик'), 0);
-  },
   kids: s => {
     $('#quiz-body').innerHTML = `
       <h2 style="margin:0 0 2px">Дитяча зона за віком</h2>
@@ -2331,19 +2269,6 @@ const ASKS = {
         <input id="k-sum" type="number" placeholder="бюджет" step="50"></div>
       <button class="go" style="width:100%;margin-top:12px"
         onclick="quiz.close();runScenario('kids',{max_uah:+$('#k-sum').value||null})">Підібрати</button>`;
-    quiz.showModal();
-  },
-  send: s => {
-    $('#quiz-body').innerHTML = `
-      <h2 style="margin:0 0 2px">Відправ рідним в інше місто</h2>
-      <div class="soft">Логістика в «Сільпо» вже є: NovaPoshta в типах доставки
-        і довідник відділень у двох tools. Бракує лише історії — ось вона.</div>
-      <h3>Куди</h3>
-      <div class="filters"><input id="s-city" value="Полтава" placeholder="місто">
-        <input id="s-office" placeholder="№ відділення (необовʼязково)" style="max-width:190px"></div>
-      <h3>Що покласти</h3>
-      <div class="filters"><input id="s-items" value="кава, шоколад, печиво, чай"></div>
-      <button class="go" style="width:100%;margin-top:12px" onclick="sendGo()">Зібрати й знайти відділення</button>`;
     quiz.showModal();
   },
   impulse: s => {
@@ -2358,43 +2283,8 @@ const ASKS = {
         onclick="quiz.close();runInsight('impulse',{name:$('#i-name').value.trim()})">Спитати</button>`;
     quiz.showModal();
   },
-  compare: s => {
-    $('#quiz-body').innerHTML = `
-      <h2 style="margin:0 0 2px">Де вигідніше</h2>
-      <div class="soft">Ціна прив'язана до магазину, а <span class="mono">find_products_batch</span>
-        приймає branchId прямо в аргументах — тож порівняння можливе без жодного нового tool.</div>
-      <h3>Список</h3>
-      <div class="filters"><input id="c-items" value="молоко, хліб, яйця, кава"></div>
-      <h3>Місто і скільки магазинів</h3>
-      <div class="filters"><input id="c-city" value="Київ">
-        <input id="c-limit" type="number" value="4" min="2" max="8" style="max-width:80px"></div>
-      <button class="go" style="width:100%;margin-top:12px" onclick="compareGo()">Порівняти</button>`;
-    quiz.showModal();
-  },
 };
 
-function partyPick(t) {
-  window.PARTY = t;
-  document.querySelectorAll('[data-th]').forEach(b =>
-    b.style.borderColor = b.dataset.th === t ? 'var(--blue)' : '');
-}
-function partyGo() {
-  quiz.close();
-  runScenario('party', { theme: window.PARTY, people: +$('#p-people').value || 4,
-                         max_uah: +$('#p-sum').value || null });
-}
-function sendGo() {
-  const items = $('#s-items').value.split(',').map(x => x.trim()).filter(Boolean);
-  quiz.close();
-  runScenario('send', { city: $('#s-city').value.trim() || 'Полтава', items,
-                        office_query: $('#s-office').value.trim() || null });
-}
-function compareGo() {
-  const items = $('#c-items').value.split(',').map(x => x.trim()).filter(Boolean);
-  quiz.close();
-  runInsight('compare', { items, city: $('#c-city').value.trim() || 'Київ',
-                          limit: +$('#c-limit').value || 4 });
-}
 
 /* ===================== Аналітика ===================== */
 function renderInsights(into) {
@@ -2465,27 +2355,10 @@ function insightView(id, r) {
     ${line('підписка коштує', money(r.price_uah))}
     ${line('чистими', money(r.net_per_month_uah), r.net_per_month_uah > 0 ? '' : 'prop')}
     <p class="soft" style="margin:7px 0 0">${r.gap}</p>`;
-  if (id === 'reminders') return `
-    <div class="head" style="margin:0 0 6px"><b>${r.headline}</b></div>
-    ${(r.overdue||[]).slice(0,5).map(h =>
-      line(h.name.slice(0,40), `прострочено ${-h.days_left} дн`, 'prop')).join('')}
-    ${(r.soon||[]).slice(0,3).map(h =>
-      line(h.name.slice(0,40), `через ${h.days_left} дн`)).join('')}
-    ${r.pet_note ? `<p class="soft" style="margin:7px 0 0">${r.pet_note}</p>` : ''}`;
-  if (id === 'popular') return `
-    <div class="head" style="margin:0 0 6px"><b>${r.headline}</b></div>
-    ${(r.categories||[]).slice(0,6).map(c => line(c.title, '')).join('')}
-    <p class="soft" style="margin:7px 0 0">${r.gap}</p>`;
   if (id === 'risk') return `
     <div class="head" style="margin:0 0 6px"><b>${r.headline || r.note}</b></div>
     ${(r.risky||[]).slice(0,5).map(x =>
       line(x.name || x.product_id, (x.options||[]).length + ' замін')).join('')}`;
-  if (id === 'eco') return `
-    <div class="head" style="margin:0 0 6px"><b>Екооцінка ${r.score}/100</b></div>
-    ${r.weight_kg ? line('вага кошика', r.weight_kg + ' кг') : ''}
-    ${(r.single_use||[]).map(n => line(n.slice(0,40), 'одноразове', 'prop')).join('')}
-    ${(r.advice||[]).map(a => `<p class="soft" style="margin:5px 0 0">${a}</p>`).join('')}
-    <p class="soft" style="margin:7px 0 0">${r.gap}</p>`;
   if (id === 'impulse') return `
     <div class="head" style="margin:0 0 6px"><b>${r.verdict === 'бери' ? '✅ бери' : '⏸ почекай'}
       · ${r.query}</b></div>
@@ -2493,19 +2366,5 @@ function insightView(id, r) {
     ${line('брав усього', r.times_bought + ' раз(и), за 30 дн — ' + r.times_last_30d)}
     ${r.avg_paid_uah ? line('твоя середня ціна', money(r.avg_paid_uah)) : ''}
     ${r.price_now_uah ? line('зараз', money(r.price_now_uah)) : ''}`;
-  if (id === 'certs') return `
-    <div class="head" style="margin:0 0 6px"><b>${r.headline || r.error}</b></div>
-    ${(r.certificates || []).map(c => line(`${c.value_uah} ₴ · до ${c.expires || '—'}`,
-      c.days_left != null ? `${c.days_left} дн` : '')).join('')}
-    ${r.cart_total_uah ? line('кошик зараз', money(r.cart_total_uah)) : ''}
-    ${r.left_to_pay_uah != null && r.count ? line('лишиться доплатити', money(r.left_to_pay_uah),
-      r.covers_cart ? '' : 'prop') : ''}
-    <p class="soft" style="margin:7px 0 0">${r.gap || r.note || ''}</p>`;
-  if (id === 'compare') return `
-    <div class="head" style="margin:0 0 6px"><b>${r.headline}</b></div>
-    ${(r.branches||[]).map(b => line(`${b.city||''} ${b.address||b.branch_id}`.slice(0,40),
-      b.error ? 'помилка' : `${money(b.total_uah)}${b.missing?.length ? ` · нема ${b.missing.length}` : ''}`,
-      r.best && b.branch_id === r.best.branch_id ? '' : '')).join('')}
-    <p class="soft" style="margin:7px 0 0">${r.how}</p>`;
   return `<div class="row"><span class="nm">Готово</span></div>`;
 }

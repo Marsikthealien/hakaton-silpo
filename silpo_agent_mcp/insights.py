@@ -302,58 +302,6 @@ async def impulse_check(name: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 5. Екослід кошика
-# ---------------------------------------------------------------------------
-_ECO_BAD = ("пакет", "одноразов", "пластиков", "фольг", "плівк")
-_ECO_GOOD = ("ваговий", "вагов", "розлив", "еко", "біо", "паперов", "скло")
-
-
-async def eco_check(pack_id: str | None = None) -> dict:
-    """Екослід набору: вага, пакети, фасоване проти вагового.
-
-    «Екодружність» — задекларована цінність самої мережі, а порахувати її нема з
-    чого: у кошику є `totalWeight`, у товарі — `weighted`. Цього достатньо для
-    чесної оцінки без вигаданих «кг CO₂».
-    """
-    from . import packs
-    from .facade import cart_weight_check
-
-    if pack_id:
-        pack = packs.get(pack_id)
-        if not pack:
-            raise SilpoError(f"Пак {pack_id} не знайдено.")
-        items = pack.get("items") or []
-        weight = None
-    else:
-        cart = await cart_weight_check()
-        items = [{"name": i.get("name"), "weighted": False}
-                 for i in (cart.get("items") or [])]
-        weight = cart.get("weight_kg")
-
-    bags = [i for i in items if any(w in (i.get("name") or "").lower() for w in _ECO_BAD)]
-    weighted = [i for i in items if i.get("weighted")
-                or any(w in (i.get("name") or "").lower() for w in _ECO_GOOD)]
-    score = 100
-    score -= 12 * len(bags)
-    score += 4 * len(weighted)
-    score = max(0, min(100, score))
-    advice = []
-    if bags:
-        advice.append(f"{len(bags)} одноразових позицій — багаторазова торба знімає це назавжди")
-    if not weighted:
-        advice.append("нічого вагового: фрукти й овочі на вагу — менше пластику за ту саму їжу")
-    if weight and weight > 8:
-        advice.append(f"{weight} кг — самовивіз пішки вже сумнівний, а доставка їде однією ходкою")
-    return {"pack_id": pack_id, "items": len(items), "weight_kg": weight,
-            "single_use": [i.get("name") for i in bags],
-            "weighted": [i.get("name") for i in weighted],
-            "score": score, "advice": advice,
-            "how": "Рахується з `weighted` у товарі й `calculation.delivery.totalWeight` у кошику.",
-            "gap": ("Пакування (пластик/скло/папір) у картці товару немає. Без нього "
-                    "екослід — оцінка, а не вимір, і ми це так і називаємо.")}
-
-
-# ---------------------------------------------------------------------------
 # 6. Чи вигідний «Плюхс»
 # ---------------------------------------------------------------------------
 # Умови підписки беремо з публічної сторінки silpo.ua/subscription: MCP віддає
@@ -405,20 +353,6 @@ async def plus_check() -> dict:
 # ---------------------------------------------------------------------------
 # 7. Сезонність: що беруть у цьому магазині
 # ---------------------------------------------------------------------------
-async def popular_now(limit: int = 12) -> dict:
-    """Популярні розділи саме цього магазину — соціальний доказ на живих даних."""
-    await context.ensure()
-    data = await silpo.call("silpo_get_popular_categories", {
-        "branchId": silpo.ctx["branchId"], "deliveryType": silpo.ctx["deliveryType"]})
-    rows = [{"title": c.get("title"), "slug": c.get("slug"), "url": c.get("url")}
-            for c in (data.get("categories") or [])][:limit]
-    return {"branch_id": silpo.ctx["branchId"], "categories": rows,
-            "count": len(rows),
-            "headline": ("У твоєму магазині зараз беруть: "
-                         + ", ".join(r["title"] for r in rows[:4])),
-            "gap": "Tool віддає лише перелік розділів — без чисел, тож «наскільки популярні» сказати не можна."}
-
-
 # ---------------------------------------------------------------------------
 # 8. Ризик збирання замовлення
 # ---------------------------------------------------------------------------
@@ -533,111 +467,9 @@ async def picking_risk(pack_id: str | None = None,
 # ---------------------------------------------------------------------------
 # 9. Де вигідніше: ціни в кількох магазинах
 # ---------------------------------------------------------------------------
-async def compare_branches(items: list[str], branch_ids: list[str] | None = None,
-                           city: str | None = None, limit: int = 4) -> dict:
-    """Один список — кілька магазинів. Ціни між філіями реально різні.
-
-    Ціна прив'язана до `branchId`, і `find_products_batch` приймає його прямо в
-    аргументах — тобто порівняння можливе без жодного нового tool.
-    """
-    await context.ensure()
-    branches = (await silpo.call("silpo_list_branches", {"hasPickup": True,
-                                                         "limit": 50})).get("branches") or []
-    if branch_ids:
-        chosen = [b for b in branches if b["branchId"] in branch_ids]
-    else:
-        target = city or "Київ"
-        chosen = [b for b in branches if b.get("city") == target and b.get("open")][:limit]
-    if not chosen:
-        chosen = branches[:limit]
-
-    ctx = context.search_ctx()
-    rows = []
-    for branch in chosen[:limit]:
-        try:
-            data = await silpo.call("silpo_find_products_batch", {
-                **ctx, "branchId": branch["branchId"],
-                "products": items[:30], "limit": 5})
-        except SilpoError as exc:
-            rows.append({"branch_id": branch["branchId"], "address": branch.get("address"),
-                         "error": str(exc)[:120]})
-            continue
-        basket, missing = [], []
-        for query in data.get("queries") or []:
-            found = [p for p in query.get("products") or []
-                     if p.get("available") and (p.get("stock") or 0) > 0]
-            if not found:
-                missing.append(query.get("query"))
-                continue
-            best = min(found, key=lambda p: p.get("price") or 1e9)
-            basket.append({"query": query.get("query"), "name": best.get("name"),
-                           "price": best.get("price"), "old_price": best.get("oldPrice")})
-        rows.append({"branch_id": branch["branchId"], "city": branch.get("city"),
-                     "address": branch.get("address"),
-                     "total_uah": round(sum(b["price"] or 0 for b in basket), 2),
-                     "found": len(basket), "missing": missing, "items": basket})
-
-    priced = [r for r in rows if r.get("total_uah") and not r.get("missing")]
-    priced = priced or [r for r in rows if r.get("total_uah")]
-    best = min(priced, key=lambda r: r["total_uah"]) if priced else None
-    worst = max(priced, key=lambda r: r["total_uah"]) if priced else None
-    return {"items": items, "branches": rows,
-            "best": best, "worst": worst,
-            "spread_uah": (round(worst["total_uah"] - best["total_uah"], 2)
-                           if best and worst else None),
-            "headline": ((f"Найдешевше — {best['address']}: {best['total_uah']} ₴, "
-                          f"різниця з найдорожчим {round(worst['total_uah'] - best['total_uah'], 2)} ₴")
-                         if best and worst else "Порівняти не вдалось"),
-            "how": "`find_products_batch` приймає branchId — ціни різні, і це видно."}
-
-
 # ---------------------------------------------------------------------------
 # 10. Відправ батькам в інше місто
 # ---------------------------------------------------------------------------
-async def np_offices(city: str, query: str | None = None, limit: int = 8) -> dict:
-    """Відділення «Нової пошти» в місті — крок до «відправ батькам у Полтаву»."""
-    found = await silpo.call("silpo_find_nova_poshta_settlements", {"title": city})
-    settlements = found.get("settlements") or found.get("items") or []
-    if not settlements:
-        return {"city": city, "settlements": [], "offices": [],
-                "error": f"Не знайшов населений пункт «{city}»."}
-    settlement = settlements[0]
-    sid = settlement.get("id") or settlement.get("settlementId")
-    args = {"settlementId": sid}
-    if query:
-        args["title"] = query
-    offices = await silpo.call("silpo_find_nova_poshta_offices", args)
-    rows = offices.get("offices") or offices.get("items") or []
-    return {"city": city,
-            "settlement": {"id": sid, "title": settlement.get("title") or settlement.get("name")},
-            "settlements_found": len(settlements),
-            "offices": [{"id": o.get("id"), "title": o.get("title") or o.get("description"),
-                         "address": o.get("address")} for o in rows[:limit]],
-            "offices_total": len(rows)}
-
-
-async def send_to_family(city: str, items: list[str], office_query: str | None = None,
-                         max_uah: float | None = None, avoid: list[str] | None = None,
-                         prefer_promo: bool = False, novelty: str = "any") -> dict:
-    """Пак для рідних в іншому місті + відділення «Нової пошти» під нього.
-
-    Логістика в «Сільпо» вже є (`NovaPoshta` у типах доставки, довідник
-    відділень у двох tools), але як окремої історії «відправ батькам» немає ні
-    в застосунку, ні в агенті.
-    """
-    from .facade import build_pack
-
-    pack = await build_pack(f"Батькам у {city}", items, max_uah=max_uah, avoid=avoid,
-                            prefer_promo=prefer_promo, novelty=novelty)
-    post = await np_offices(city, office_query)
-    pack["nova_poshta"] = post
-    pack["delivery_type"] = "NovaPoshta"
-    pack["note"] = ("Пак зібрано в наявному магазині; доставка «Новою поштою» "
-                    "обирається на чекауті — tool на зміну типу доставки в кошику "
-                    "MCP не дає.")
-    return pack
-
-
 # ---------------------------------------------------------------------------
 # 11. Дитяча зона за віком, а не «дитина = пюре»
 # ---------------------------------------------------------------------------
@@ -685,95 +517,6 @@ async def kids_pack(max_uah: float | None = None, avoid: list[str] | None = None
 # ---------------------------------------------------------------------------
 # 12. Закупівля для офісу
 # ---------------------------------------------------------------------------
-async def office_pack(items: list[str], people: int = 10, max_uah: float | None = None,
-                      avoid: list[str] | None = None, prefer_promo: bool = False,
-                      novelty: str = "any") -> dict:
-    """B2B-закупівля: той самий пак, але з перевіркою, чи доступний режим бізнесу."""
-    from .facade import build_pack, delivery_label
-
-    await context.ensure()
-    types = await silpo.call("silpo_get_available_delivery_types", {
-        "branchId": silpo.ctx["branchId"]})
-    available = [t.get("deliveryType") or t for t in (types.get("deliveryTypes")
-                                                      or types.get("types") or [])]
-    pack = await build_pack(f"Офіс на {people}", items, max_uah=max_uah, avoid=avoid,
-                            prefer_promo=prefer_promo, novelty=novelty)
-    for item in pack.get("items") or []:
-        item["qty"] = max(1, round(people / 5))
-    pack["people"] = people
-    pack["delivery_types"] = [{"code": str(t), "title": delivery_label(str(t))}
-                              for t in available]
-    pack["b2b_available"] = any("B2B" in str(t) for t in available)
-    pack["why"] = ("У enum типів доставки є B2B, PreOrder і WideAssortDelivery — "
-                   "цілий пласт сценаріїв для бізнесу, якого агент не торкається.")
-    return pack
-
-
 # ---------------------------------------------------------------------------
 # 13. Подарункові сертифікати
 # ---------------------------------------------------------------------------
-async def certificates() -> dict:
-    """Сертифікати гостя і чи можна ними платити за цей кошик.
-
-    Довго вважали цей сценарій заблокованим: `get_my_certificates` віддавав
-    500. Перевірка 8 вересня — 12 викликів поспіль без жодної помилки, і
-    `add_or_update_certificates` теж відповідає. Отже 500 був тимчасовим збоєм,
-    а не постійною поломкою, і сценарій живий.
-    """
-    data = await silpo.call("silpo_get_my_certificates", {"limit": 50})
-    if isinstance(data, dict) and "500" in str(data.get("text", "")):
-        return {"available": False, "certificates": [],
-                "error": "get_my_certificates знову віддав 500 — спробуй ще раз.",
-                "note": "Збій плаваючий: у серії з 12 викликів 8 вересня не впав жодного разу."}
-
-    rows = data.get("certificates") or []
-    detail = await context.cart_details()
-    cart = detail.get("cart") or detail
-    total = (cart.get("calculation") or {}).get("total") or 0
-    today = _today()
-    out = []
-    for cert in rows:
-        ends = _date(cert.get("expireDate"))
-        out.append({"barcode": cert.get("barcode"), "value_uah": cert.get("value"),
-                    "expires": cert.get("expireDate"),
-                    "days_left": (ends - today).days if ends else None,
-                    "needs_pin": bool(cert.get("pincode") is None)})
-    have = round(sum(c["value_uah"] or 0 for c in out), 2)
-    return {
-        "available": True, "count": len(out), "certificates": out,
-        "total_value_uah": have, "cart_total_uah": total,
-        "covers_cart": have >= total > 0,
-        "left_to_pay_uah": round(max(total - have, 0), 2) if total else None,
-        "headline": (f"{len(out)} сертифікатів на {have} ₴; кошик — {total} ₴."
-                     if out else "Сертифікатів на акаунті немає."),
-        "how": ("`add_or_update_certificates` приймає shoppingCartId і список "
-                "barcode+pincode. Порожні списки — безпечний no-op: саме так ми "
-                "й перевірили, що tool живий, нічого не змінюючи."),
-        "gap": ("Номінал сертифіката відомий, а зібрати кошик РІВНО під нього "
-                "агент не може: у `find_products_batch` немає підбору за сумою. "
-                "Це рахуємо самі — і саме тому сценарій «кошик під сертифікат» "
-                "лишається наближеним."),
-    }
-
-
-async def certificate_apply(barcode: str, pincode: str | None = None) -> dict:
-    """Прикласти сертифікат до справжнього кошика.
-
-    Пише в акаунт, тож зроблено окремим tool: гість має натиснути свідомо.
-    """
-    ctx = await context.ensure()
-    entry = {"barcode": barcode}
-    if pincode:
-        entry["pincode"] = pincode
-    result = await silpo.call("silpo_add_or_update_certificates", {
-        "shoppingCartId": ctx["shoppingCartId"],
-        "certificatesToAdd": [entry], "certificatesToRemove": []})
-    # Tool сам вимагає звірити кошик після запису — робимо це, а не віримо
-    # відповіді: success:true ще не означає «прийнялось».
-    detail = await context.cart_details()
-    cart = detail.get("cart") or detail
-    calc = cart.get("calculation") or {}
-    return {"applied": result.get("added") or [], "raw_summary": result.get("summary"),
-            "cart_total_uah": calc.get("totalAfterDiscounts", calc.get("total")),
-            "certificates_in_cart": cart.get("certificates") or [],
-            "note": "Кошик перечитано після запису — саме цього вимагає сам tool."}

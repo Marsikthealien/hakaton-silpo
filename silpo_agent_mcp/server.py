@@ -151,8 +151,6 @@ PROPOSED = (
     ("silpo_wellbeing_state", proposed.wellbeing_state),
     ("silpo_list_connectors", proposed.connectors),
     ("silpo_connect_source", proposed.connect),
-    ("silpo_get_store_layout", proposed.store_route),
-    ("silpo_save_store_layout", proposed.save_store_route),
     ("silpo_add_family_recipe", proposed.add_family_recipe),
     ("silpo_get_family_recipes", proposed.family_recipes),
     ("silpo_find_recipes_online", proposed.find_recipe_online),
@@ -188,8 +186,7 @@ TOOLS = (
     facade.who_am_i, facade.receipts,
     search_products, facade.browse_sets,
     facade.build_pack, facade.pack_from_receipt, facade.pack_from_set,
-    facade.reorder_pack, facade.mood_pack, facade.evening_pack,
-    facade.meal_pack, facade.breakfast_pack, facade.scenarios,
+    facade.reorder_pack, facade.mood_pack, facade.meal_pack, facade.scenarios,
     facade.product_card, facade.cart_weight_check,
     facade.optimize_pack, facade.swap_item,
     facade.alternatives, facade.swap_to,
@@ -200,20 +197,16 @@ TOOLS = (
     facade.precheck_pack,
     facade.set_branch, facade.mcp_trace,
 
-    # Сценарії на бюджет, тиждень, компанію та нагадування
-    facade.budget_pack, facade.weekly_pack, facade.party_pack, facade.reminders,
-    facade.family_pack, facade.crew_pack,
+    # Сценарії на бюджет, тиждень, родину й компанію
+    facade.budget_pack, facade.weekly_pack, facade.family_pack, facade.crew_pack,
 
     # Правка пака словами: «прибери пакет», «додай молоко», «заміни чипси»
     facade.pack_add, facade.pack_remove, facade.pack_set_qty, facade.pack_swap_named,
 
     # Аналітика — усе на наявних 40 tools, жодного нового не потрібно
     insights.coupon_audit, insights.coupon_detail, insights.savings_report,
-    insights.spend_report, insights.impulse_check, insights.eco_check,
-    insights.plus_check, insights.popular_now, insights.picking_risk,
-    insights.compare_branches, insights.np_offices, insights.send_to_family,
-    insights.kids_pack, insights.office_pack,
-    insights.certificates, insights.certificate_apply,
+    insights.spend_report, insights.impulse_check, insights.plus_check,
+    insights.picking_risk, insights.kids_pack,
 
     # Грибниця: таблиця рівнів — щоб криву було видно, а не лише обіцяно
     game.level_table,

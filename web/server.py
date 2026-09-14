@@ -173,9 +173,7 @@ async def deck(request: Request):
 async def preferences(request: Request):
     """Усе, що впливає на підбір: наші вподобання + дієти з акаунта «Сільпо»."""
     profile = (await host.call("get_profile", {})).get("profile", {})
-    facts = (await host.call("get_facts", {})).get("facts", [])
-    return ok({"profile": profile, "facts": facts,
-               "scenarios": await host.call("scenarios", {})})
+    return ok({"profile": profile, "scenarios": await host.call("scenarios", {})})
 
 
 async def search(request: Request):
@@ -239,7 +237,6 @@ routes = [
     Route("/", page("index.html")),
     Route("/profile", page("profile.html")),
     Route("/game", page("game.html")),
-    Route("/road", page("road.html")),
     Route("/tech", page("tech.html")),
     Route("/join", page("join.html")),
     Route("/qr", qr),
@@ -275,8 +272,6 @@ routes = [
     Route("/api/pack/from_set", scenario_route("pack_from_set", {"max_uah": float}), methods=["POST"]),
     Route("/api/pack/reorder", tool_route("reorder_pack"), methods=["POST"]),
     Route("/api/pack/mood", scenario_route("mood_pack", {"max_uah": float}), methods=["POST"]),
-    Route("/api/pack/evening", scenario_route("evening_pack", {"max_uah": float}), methods=["POST"]),
-    Route("/api/pack/breakfast", scenario_route("breakfast_pack", {"max_uah": float}), methods=["POST"]),
     Route("/api/pack/meal", scenario_route("meal_pack", {"max_uah": float}), methods=["POST"]),
     Route("/api/product", tool_route("product_card", from_query=("slug",)), methods=["GET", "POST"]),
 
@@ -292,8 +287,6 @@ routes = [
     Route("/api/deck", deck),
     Route("/api/connectors", tool_route("silpo_list_connectors")),
     Route("/api/connect", tool_route("silpo_connect_source"), methods=["POST"]),
-    Route("/api/route", tool_route("silpo_get_store_layout"), methods=["POST"]),
-    Route("/api/route/save", tool_route("silpo_save_store_layout"), methods=["POST"]),
     Route("/api/weight", tool_route("cart_weight_check")),
     Route("/api/family/recipes", tool_route("silpo_get_family_recipes")),
     Route("/api/family/recipe", tool_route("silpo_add_family_recipe"), methods=["POST"]),
@@ -350,27 +343,15 @@ routes = [
           from_query=("window_days",), casts={"window_days": int})),
     Route("/api/impulse", tool_route("impulse_check", from_query=("name",)),
           methods=["GET", "POST"]),
-    Route("/api/eco", tool_route("eco_check", from_query=("pack_id",)),
-          methods=["GET", "POST"]),
     Route("/api/plus", tool_route("plus_check")),
-    Route("/api/certificates", tool_route("certificates")),
-    Route("/api/certificates/apply", tool_route("certificate_apply"), methods=["POST"]),
-    Route("/api/popular", tool_route("popular_now")),
     Route("/api/risk", tool_route("picking_risk", from_query=("pack_id",)),
           methods=["GET", "POST"]),
-    Route("/api/compare", tool_route("compare_branches",
-          casts={"limit": int}), methods=["POST"]),
-    Route("/api/np", tool_route("np_offices", from_query=("city", "query"))),
-    Route("/api/reminders", tool_route("reminders",
-          from_query=("horizon_days",), casts={"horizon_days": int})),
 
     # --- нові пак-сценарії ---
     Route("/api/pack/budget", scenario_route("budget_pack",
           {"budget_uah": float, "days": int}), methods=["POST"]),
     Route("/api/pack/weekly", scenario_route("weekly_pack",
           {"budget_uah": float}), methods=["POST"]),
-    Route("/api/pack/party", scenario_route("party_pack",
-          {"people": int, "max_uah": float}), methods=["POST"]),
     Route("/api/pack/kids", scenario_route("kids_pack", {"max_uah": float}),
           methods=["POST"]),
     Route("/api/pack/family", scenario_route("family_pack", {"max_uah": float}),
@@ -394,20 +375,11 @@ routes = [
     Route("/api/crew/share/answer", tool_route("silpo_crew_share_answer"), methods=["POST"]),
     Route("/api/pack/crew", scenario_route("crew_pack", {"max_uah": float}),
           methods=["POST"]),
-    Route("/api/pack/office", scenario_route("office_pack",
-          {"people": int, "max_uah": float}), methods=["POST"]),
-    Route("/api/pack/send", scenario_route("send_to_family", {"max_uah": float}),
-          methods=["POST"]),
 
-    # --- профіль і памʼять (profile MCP: те, чого немає в акаунті «Сільпо») ---
+    # --- профіль (profile MCP: те, чого немає в акаунті «Сільпо») ---
     Route("/api/profile", tool_route("get_profile")),
     Route("/api/profile", tool_route("update_profile"), methods=["POST"]),
     Route("/api/profile/reset", tool_route("reset_profile"), methods=["POST"]),
-    Route("/api/fact", tool_route("remember_fact"), methods=["POST"]),
-    Route("/api/facts", tool_route("get_facts")),
-    Route("/api/triggers", tool_route("check_triggers")),
-    Route("/api/rewards", tool_route("get_rewards")),
-    Route("/api/reward", tool_route("grant_reward"), methods=["POST"]),
 
     # --- голос ---
     Route("/api/voice", tool_route("voice_status")),

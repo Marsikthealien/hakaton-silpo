@@ -89,8 +89,6 @@ PROPOSED = {
     "silpo_claim_level_reward": "відкриваю нагороду за рівень",
     "silpo_get_skins": "перебираю скіни",
     "silpo_set_skin": "міняю скін",
-    "silpo_get_store_layout": "читаю порядок відділів",
-    "silpo_save_store_layout": "зберігаю порядок відділів",
     "silpo_create_crew": "створюю компанію",
     "silpo_get_crew": "відкриваю компанію",
     "silpo_list_crews": "перебираю компанії",
