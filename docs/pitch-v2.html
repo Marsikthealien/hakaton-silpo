@@ -567,6 +567,7 @@ svg[data-icon]{fill:currentColor;display:block;flex:none}
 .receipt .rr b{font-weight:800;font-size:1.32cqw;grid-column:1}
 .receipt .rr span{font-size:1.04cqw;color:var(--dim);font-weight:500;line-height:1.4;grid-column:1}
 .receipt .rr code{font:.84cqw/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);grid-column:1}
+.receipt .rr code .p{color:#6D45D4;font-weight:700}
 .receipt .rr i{grid-column:2;grid-row:1/4;font-style:normal;font-weight:800;font-size:1.5cqw;
   color:#177755;text-align:right}
 .receipt .rf{padding-top:1cqw;font-weight:800;font-size:1.24cqw;display:flex;justify-content:space-between}
@@ -1255,7 +1256,7 @@ svg[data-icon]{fill:currentColor;display:block;flex:none}
           <div class="rh">Перевірка перед «Оформити»</div>
           <div class="rr" data-s="1"><b>Топати чи замовити</b>
             <span>самовивіз за 0,8 км — 0 ₴ · доставка 99 ₴ · від 1 399 ₴ — 69 ₴</span>
-            <code>list_branches · get_time_slots · estimate_delivery⁺</code><i>✓</i></div>
+            <code>list_branches · get_time_slots · <span class="p">estimate_delivery⁺</span></code><i>✓</i></div>
           <div class="rr" data-s="2"><b>Вага кошика</b>
             <span>ліміт слоту 40 кг — читається до оформлення, не на оплаті</span>
             <code>get_shopping_cart_by_id · get_time_slots</code><i>✓</i></div>
@@ -1264,7 +1265,7 @@ svg[data-icon]{fill:currentColor;display:block;flex:none}
             <code>get_my_coupons · get_coupon_details</code><i>✓</i></div>
           <div class="rr" data-s="4"><b>Промо</b>
             <span>обрано ті, що лягають на кошик, — 1 із 5, само</span>
-            <code>get_my_promos · select_promos⁺</code><i>✓</i></div>
+            <code>get_my_promos · <span class="p">select_promos⁺</span></code><i>✓</i></div>
           <div class="rf">Разом — без сюрпризів на касі</div>
         </div>
       </div>
