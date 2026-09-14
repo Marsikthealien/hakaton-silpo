@@ -1,5 +1,7 @@
 :root{
-  --bg:#EEF1F8; --card:#FFFFFF; --line:#E3E7F0; --tint:#F5F7FC;
+  /* Сторінка — чисто біла, як слайди пітчу; світло-сірий лишається лише
+     всередині телефона, щоб білі картки на екрані читались. */
+  --page:#FFFFFF; --bg:#EEF1F8; --card:#FFFFFF; --line:#E3E7F0; --tint:#F5F7FC;
   --ink:#0F1729; --muted:#6B7280; --soft:#9AA3B2;
   --blue:#2B5CE6; --blue-soft:#EAF0FE;
   --red:#E4002B; --green:#12805A; --amber:#B45309;
@@ -10,13 +12,13 @@
   --phone-w:424px; --phone-h:min(80vh,780px); --phone-h-min:560px;
 }
 *{box-sizing:border-box}
-body{margin:0; background:var(--bg); color:var(--ink); font-size:14.5px; line-height:1.45;
+body{margin:0; background:var(--page); color:var(--ink); font-size:14.5px; line-height:1.45;
   font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
 a{color:var(--blue)}
 
 /* верхня панель */
-.top{position:sticky; top:0; z-index:20; background:rgba(238,241,248,.92);
+.top{position:sticky; top:0; z-index:20; background:rgba(255,255,255,.92);
   backdrop-filter:blur(8px); border-bottom:1px solid var(--line)}
 .top .in{max-width:1320px; margin:0 auto; padding:11px 20px; display:flex; align-items:center; gap:18px}
 .brand{display:flex; align-items:center; gap:9px; text-decoration:none; color:inherit}
@@ -237,6 +239,8 @@ body.mobile .desktop-only{display:none !important}
 /* живий ланцюг */
 .live{border:1px solid var(--line);border-radius:12px;background:var(--tint);
   padding:10px 12px;font-size:12px}
+/* `.live` на #shell — модифікатор сітки, а не стрічка: без рамки й тла */
+.shell.live{border:0;border-radius:0;background:transparent;padding:0}
 .live .row{display:flex;gap:8px;padding:3px 0;align-items:baseline}
 .live .row .nm{flex:1;font-family:ui-monospace,Menlo,monospace}
 .live .row.prop .nm{color:#6B34C9}
